@@ -19,7 +19,7 @@ import pickle
 
 from rl_model import run_models
 
-df_price = pd.read_csv("/home/wenbiaolin/20221117/sp500_price_19960101_20221021.csv")
+df_price = pd.read_csv("./data_processor_update/sp500_price_199601_202502.csv")
 
 df_price['adjcp'] = df_price['prccd'] / df_price['ajexdi']
 
@@ -95,17 +95,31 @@ for idx in range(1, len(trade_date)):
 
     stock_dimension = len(df_.tic.unique())
     state_space = stock_dimension
-    env_kwargs = {
-    "hmax": 100, 
-    "initial_amount": 1000000, 
-    "transaction_cost_pct": 0.001, 
-    "state_space": state_space, 
-    "stock_dim": stock_dimension, 
-    "tech_indicator_list": config.INDICATORS, 
-    "action_space": stock_dimension, 
-    "reward_scaling": 1e-4
     
+    # Fetch VIX data to introduce adaptive transaction cost
+    vix_data = pd.read_csv("vix_data.csv")  # Load VIX index data
+    vix_data["date"] = pd.to_datetime(vix_data["date"])
+    df_ = df_.merge(vix_data, on="date", how="left")  # Merge VIX with price data
+    
+    # Set transaction cost dynamically based on volatility
+    beta_0 = 0.001  # Base transaction cost
+    delta = 0.00005  # Sensitivity parameter (adjustable)
+    
+    df_["transaction_cost_pct"] = beta_0 + delta * df_["VIX_Close"]  # Adaptive cost
+    reward_scaling_factor = 1e-3 #scales reward function based on transaction size
+    
+    # Update environment parameters
+    env_kwargs = {
+        "hmax": 100, 
+        "initial_amount": 1000000, 
+        "transaction_cost_pct": df_["transaction_cost_pct"],  # Use adaptive cost
+        "state_space": state_space, 
+        "stock_dim": stock_dimension, 
+        "tech_indicator_list": config.INDICATORS, 
+        "action_space": stock_dimension, 
+        "reward_scaling" = reward_scaling_factor / env_kwargs["initial_amount"]
     }
+
 
     
     a2c_model,ppo_model,ddpg_model,td3_model,sac_model,best_model = run_models(df_, "date", pd.to_datetime(trade_date[idx-1]), env_kwargs,testing_window, max_rolling_window)
