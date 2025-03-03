@@ -17,12 +17,12 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     
     #sector name
-    parser.add_argument('-sector_name','--sector_name_input', type=str,  required=True,help='sector name: i.e. sector10')
+    parser.add_argument('-sector_name','--sector_name_input', type=str, default='sector10',help='sector name: i.e. sector10')
 
     # file name
-    parser.add_argument('-fundamental','--fundamental_input', type=str,  required=True,help='inputfile name for fundamental table')
-    parser.add_argument('-sector','--sector_input', type=str,  required=True,help='inputfile name for individual sector')
-    
+    parser.add_argument('-fundamental','--fundamental_input', type=str, default='data_processor_update/outputs/final_ratios.csv',help='inputfile name for fundamental table')
+    parser.add_argument('-sector','--sector_input', type=str, default='data_processor_update/outputs/sector10.xlsx',help='inputfile name for individual sector')
+
     # rolling window variables
     parser.add_argument("-first_trade_index", default=20, type=int)
     parser.add_argument("-testing_window", default=4, type=int)
@@ -30,7 +30,7 @@ if __name__ == '__main__':
     # column name
     parser.add_argument("-label_column", default='y_return', type=str)
     parser.add_argument("-date_column", default='date', type=str)
-    parser.add_argument("-tic_column", default='tic', type=str)
+    parser.add_argument("-tic_column", default='gvkey', type=str) #tic
     parser.add_argument("-no_feature_column_names", default = ['gvkey', 'tic', 'datadate', 'rdq', 'datadate', 'fyearq', 'fqtr',
        'conm', 'datacqtr', 'datafqtr', 'gsector','y_return'], type=list,help='column names that are not fundamental features')
 
@@ -39,13 +39,11 @@ if __name__ == '__main__':
     args = parser.parse_args()
     #load fundamental table
     inputfile_fundamental = args.fundamental_input
-    
     fundamental_total=pd.read_csv(inputfile_fundamental)
    # fundamental_total=fundamental_total[fundamental_total['tradedate'] < 20170901]
     #get all unique quarterly date
     # load sector data
     inputfile_sector = args.sector_input
-  
     sector_data=pd.read_excel(inputfile_sector)
     unique_datetime = sorted(sector_data.date.unique())
 
@@ -73,10 +71,9 @@ if __name__ == '__main__':
     # features column: different base on sectors
     no_feature_column_names = args.no_feature_column_names
     features_column = [x for x in sector_data.columns.values if (x not in no_feature_column_names) and (np.issubdtype(sector_data[x].dtype, np.number) and(not np.any(np.isnan(sector_data[x]))))]
-    
+    features_column = features_column[1:]
     #sector name
     sector_name = args.sector_name_input
-    
     try:
         start = time.time()
         model_result=ml_model.run_4model(sector_data,
@@ -93,9 +90,13 @@ if __name__ == '__main__':
         print('Time Spent: ',(end-start)/60,' minutes')
         ml_model.save_model_result(model_result,sector_name)
 
-    except e:
+    # except e:
+    #     print(e)
+    except Exception as e:
         print(e)
+
 
     
 
 # python3 fundamental_run_model.py -sector_name sector10 -fundamental Data/fundamental_final_table.xlsx -sector Data/1-focasting_data/sector10_clean.xlsx 
+# python fundamental_run_model.py -sector_name sector10 -fundamental data_processor_update/sp500_fundamental_199601_202502.csv -sector data_processor_update/outputs/sector10.xlsx
