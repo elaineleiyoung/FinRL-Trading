@@ -48,7 +48,7 @@ if permnos:
             # Merge the dataframes
             fundamental_df = pd.merge(fundamental_df, sector_df, on='gvkey', how='left')
     
-    fundamental_df.to_csv("sp500_fundamental_199601_202502_new.csv", index=False)
+    fundamental_df.to_csv("sp500_fundamental_199601_202502.csv", index=False)
 else:
     fundamental_df = pd.DataFrame()
     print("No matching GVKEY, S&P 500 tic might have error")
