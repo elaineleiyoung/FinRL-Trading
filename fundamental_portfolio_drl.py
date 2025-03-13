@@ -19,25 +19,31 @@ import pickle
 
 from rl_model import run_models
 
-df_price = pd.read_csv("./data_processor_update/sp500_price_199601_202502.csv")
+fund_df = pd.read_csv('data_processor_update/sp500_fundamental_199601_202502.csv')
+fund_df.drop_duplicates('gvkey', inplace=True)
+fund_df = fund_df[['gvkey','tic']]
 
-df_price['adjcp'] = df_price['prccd'] / df_price['ajexdi']
+df_price = pd.read_csv("data_processor_update/sp500_price_199601_202502.csv")
+df_price = pd.merge(df_price, fund_df, on='tic')
 
-df_price['date'] = df_price['datadate']
-df_price['open'] = df_price['prcod']
-df_price['close'] = df_price['prccd']
-df_price['high'] = df_price['prchd']
-df_price['low'] = df_price['prcld']
-df_price['volume'] =df_price['cshtrd']
+# df_price['adjcp'] = df_price['prccd'] / df_price['ajexdi']
+df_price['adjcp'] = df_price['adj_close_q']
+
+# df_price['date'] = df_price['datadate']
+df_price['open'] = df_price['openprc']
+df_price['close'] = df_price['adj_close_q']
+df_price['high'] = df_price['askhi']
+df_price['low'] = df_price['bidlo']
+df_price['volume'] =df_price['vol']
 
 df = df_price[['date', 'open', 'close', 'high', 'low','adjcp','volume', 'gvkey']]
 
 df['tic'] = df_price['gvkey']
-
-df['date'] = pd.to_datetime(df['date'], format='%Y%m%d')
+df['date'] = df['date'].str[:10]
+df['date'] = pd.to_datetime(df['date'], format='%Y-%m-%d')
 df['day'] = [x.weekday() for x in df['date']]
 df.drop_duplicates(['gvkey', 'date'], inplace=True)
-selected_stock = pd.read_csv("stock_selected_rf.csv")
+selected_stock = pd.read_csv("stock_selected.csv")
 
 trade_date=selected_stock.trade_date.unique()
 
@@ -49,8 +55,8 @@ with open('all_stocks_info.pickle', 'rb') as handle:
 
 
 df_dict = {'trade_date':[], 'gvkey':[], 'weights':[]}
-testing_window = pd.Timedelta(np.timedelta64(1,'Y'))
-max_rolling_window = pd.Timedelta(np.timedelta64(10, 'Y'))
+testing_window = pd.Timedelta(np.timedelta64(366, 'D'))
+max_rolling_window = pd.Timedelta(np.timedelta64(3660, 'D'))
 
 
 for idx in range(1, len(trade_date)):
@@ -95,31 +101,17 @@ for idx in range(1, len(trade_date)):
 
     stock_dimension = len(df_.tic.unique())
     state_space = stock_dimension
-    
-    # Fetch VIX data to introduce adaptive transaction cost
-    vix_data = pd.read_csv("vix_data.csv")  # Load VIX index data
-    vix_data["date"] = pd.to_datetime(vix_data["date"])
-    df_ = df_.merge(vix_data, on="date", how="left")  # Merge VIX with price data
-    
-    # Set transaction cost dynamically based on volatility
-    beta_0 = 0.001  # Base transaction cost
-    delta = 0.00005  # Sensitivity parameter (adjustable)
-    
-    df_["transaction_cost_pct"] = beta_0 + delta * df_["VIX_Close"]  # Adaptive cost
-    reward_scaling_factor = 1e-3 #scales reward function based on transaction size
-    
-    # Update environment parameters
     env_kwargs = {
-        "hmax": 100, 
-        "initial_amount": 1000000, 
-        "transaction_cost_pct": df_["transaction_cost_pct"],  # Use adaptive cost
-        "state_space": state_space, 
-        "stock_dim": stock_dimension, 
-        "tech_indicator_list": config.INDICATORS, 
-        "action_space": stock_dimension, 
-        "reward_scaling" = reward_scaling_factor / env_kwargs["initial_amount"]
+    "hmax": 100, 
+    "initial_amount": 1000000, 
+    "transaction_cost_pct": 0.001, 
+    "state_space": state_space, 
+    "stock_dim": stock_dimension, 
+    "tech_indicator_list": config.INDICATORS, 
+    "action_space": stock_dimension, 
+    "reward_scaling": 1e-4
+    
     }
-
 
     
     a2c_model,ppo_model,ddpg_model,td3_model,sac_model,best_model = run_models(df_, "date", pd.to_datetime(trade_date[idx-1]), env_kwargs,testing_window, max_rolling_window)
