@@ -1,0 +1,25 @@
+# Model Building Requirements
+numpy
+pandas
+stockstats
+scikit-learn
+gym
+stable-baselines3[mpi]
+stable-baselines3
+stable-baselines3[extra]
+tensorflow
+
+joblib
+
+# plot
+matplotlib
+
+# testing requirements
+pytest
+
+# packaging
+setuptools
+wheel
+
+shimmy
+

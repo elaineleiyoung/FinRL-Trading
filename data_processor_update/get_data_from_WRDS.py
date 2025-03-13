@@ -47,6 +47,9 @@ if permnos:
             
             # Merge the dataframes
             fundamental_df = pd.merge(fundamental_df, sector_df, on='gvkey', how='left')
+            # Fill missing sectors with "Unknown"
+            fundamental_df['gsector'].fillna("Unknown", inplace=True)
+
     
     fundamental_df.to_csv("sp500_fundamental_199601_202502.csv", index=False)
 else:
@@ -55,3 +58,9 @@ else:
 
 db.close()
 print(fundamental_df.head())
+print(sector_df.head())  # See if 'gsector' is actually fetched
+print(sector_df.isnull().sum())  # Check for missing data
+
+missing_gvkeys = fundamental_df[fundamental_df['gsector'] == "Unknown"]['gvkey'].unique()
+print("Missing GVKEYs:", missing_gvkeys)
+

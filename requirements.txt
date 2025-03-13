@@ -1,16 +1,16 @@
 # Model Building Requirements
-numpy==1.16.4
-pandas==1.0.3
+numpy
+pandas
 stockstats
-scikit-learn==0.21.0
-gym==0.15.3
+scikit-learn
+gym
 stable-baselines[mpi]
 tensorflow==1.15.4
 
-joblib==1.2.0
+joblib
 
 # plot
-matplotlib==3.2.1
+matplotlib
 
 # testing requirements
 pytest>=5.3.2,<6.0.0
@@ -19,5 +19,6 @@ pytest>=5.3.2,<6.0.0
 setuptools>=41.4.0,<42.0.0
 wheel>=0.33.6,<0.34.0
 
+pickle
 
 
