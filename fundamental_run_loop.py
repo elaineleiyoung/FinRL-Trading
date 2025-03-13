@@ -2,7 +2,7 @@ import argparse
 import subprocess
 if __name__ == '__main__':
     sector_list = [0] + list(range(10, 65, 5))
-    sector_list.remove(10)
+    # sector_list.remove(10)
     python_env = "venv\\Scripts\\python.exe"
     for sector in sector_list:
         print(f"Running for sector{sector}...")
