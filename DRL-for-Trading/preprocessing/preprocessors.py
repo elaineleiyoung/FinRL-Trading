@@ -46,45 +46,34 @@ def calcualte_price(df):
 
 def add_technical_indicator(df):
     """
-    calcualte technical indicators
-    use stockstats package to add technical inidactors
-    :param data: (df) pandas dataframe
-    :return: (df) pandas dataframe
+    Calculate technical indicators using the stockstats package.
+    :param df: (pd.DataFrame) Input dataframe.
+    :return: (pd.DataFrame) Dataframe with added technical indicators.
     """
     stock = Sdf.retype(df.copy())
-
     stock['close'] = stock['adjcp']
     unique_ticker = stock.tic.unique()
 
-    macd = pd.DataFrame()
-    rsi = pd.DataFrame()
-    cci = pd.DataFrame()
-    dx = pd.DataFrame()
+    macd_list, rsi_list, cci_list, dx_list = [], [], [], []
 
-    #temp = stock[stock.tic == unique_ticker[0]]['macd']
-    for i in range(len(unique_ticker)):
+    for ticker in unique_ticker:
         ## macd
-        temp_macd = stock[stock.tic == unique_ticker[i]]['macd']
-        temp_macd = pd.DataFrame(temp_macd)
-        macd = macd.append(temp_macd, ignore_index=True)
+        temp_macd = stock[stock.tic == ticker][['macd']].reset_index(drop=True)
+        macd_list.append(temp_macd)
         ## rsi
-        temp_rsi = stock[stock.tic == unique_ticker[i]]['rsi_30']
-        temp_rsi = pd.DataFrame(temp_rsi)
-        rsi = rsi.append(temp_rsi, ignore_index=True)
+        temp_rsi = stock[stock.tic == ticker][['rsi_30']].reset_index(drop=True)
+        rsi_list.append(temp_rsi)
         ## cci
-        temp_cci = stock[stock.tic == unique_ticker[i]]['cci_30']
-        temp_cci = pd.DataFrame(temp_cci)
-        cci = cci.append(temp_cci, ignore_index=True)
+        temp_cci = stock[stock.tic == ticker][['cci_30']].reset_index(drop=True)
+        cci_list.append(temp_cci)
         ## adx
-        temp_dx = stock[stock.tic == unique_ticker[i]]['dx_30']
-        temp_dx = pd.DataFrame(temp_dx)
-        dx = dx.append(temp_dx, ignore_index=True)
+        temp_dx = stock[stock.tic == ticker][['dx_30']].reset_index(drop=True)
+        dx_list.append(temp_dx)
 
-
-    df['macd'] = macd
-    df['rsi'] = rsi
-    df['cci'] = cci
-    df['adx'] = dx
+    df['macd'] = pd.concat(macd_list, ignore_index=True)
+    df['rsi'] = pd.concat(rsi_list, ignore_index=True)
+    df['cci'] = pd.concat(cci_list, ignore_index=True)
+    df['adx'] = pd.concat(dx_list, ignore_index=True)
 
     return df
 
@@ -121,8 +110,8 @@ def preprocess_data():
     vix_data = load_vix_data("data/VIXCLS.csv")
     df_preprocess = add_vix_data(df_preprocess, vix_data)
     # fill the missing values at the beginning
-    df_preprocess.fillna(method='bfill', inplace=True)  
-    return df_preprocess
+    df_final = df_preprocess.bfill()
+    return df_final
 
 def add_turbulence(df):
     """
