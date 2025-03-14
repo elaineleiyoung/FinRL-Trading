@@ -88,7 +88,25 @@ def add_technical_indicator(df):
 
     return df
 
+def load_vix_data(file_name: str) -> pd.DataFrame:
+    """
+    Load historical VIX data and format it correctly.
+    """
+    vix_data = pd.read_csv(file_name)
+    # depends on VIX data format
+    vix_data = vix_data.rename(columns={'observation_date': 'datadate', 'VIXCLS': 'VIX'})
+    vix_data['datadate'] = pd.to_datetime(vix_data['datadate']).dt.strftime('%Y%m%d').astype(int)
+    ###
+    vix_data = vix_data[['datadate', 'VIX']]
+    return vix_data
 
+def add_vix_data(df, vix_data):
+    """
+    Merge VIX data with stock dataset.
+    """
+    df = df.merge(vix_data, on='datadate', how='left')
+    df['VIX'] = df['VIX'].ffill()  # Forward-fill missing VIX values
+    return df
 
 def preprocess_data():
     """data preprocessing pipeline"""
@@ -99,10 +117,12 @@ def preprocess_data():
     # calcualte adjusted price
     df_preprocess = calcualte_price(df)
     # add technical indicators using stockstats
-    df_final=add_technical_indicator(df_preprocess)
+    df_preprocess = add_technical_indicator(df_preprocess)
+    vix_data = load_vix_data("data/VIXCLS.csv")
+    df_preprocess = add_vix_data(df_preprocess, vix_data)
     # fill the missing values at the beginning
-    df_final.fillna(method='bfill',inplace=True)
-    return df_final
+    df_preprocess.fillna(method='bfill', inplace=True)  
+    return df_preprocess
 
 def add_turbulence(df):
     """
