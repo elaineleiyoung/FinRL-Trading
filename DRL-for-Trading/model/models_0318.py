@@ -348,6 +348,9 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
             new_balance_ddpg,
             arrangement_ddpg
         )
+        del model_a2c, model_ppo, model_ddpg, model_ensemble
+        del env_train, env_val
+        del train_set, val_set, trade_set
         gc.collect()
 
     pd.DataFrame(ppo_sharpe_list).to_csv("DRL-for-Trading/ppo_sharpe_list.csv")
