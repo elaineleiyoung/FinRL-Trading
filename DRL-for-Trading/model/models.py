@@ -13,7 +13,7 @@ from preprocessing.preprocessors import *
 from config import config
 
 # customized env
-from env.EnvMultipleStock_train import StockEnvTrain
+from env.EnvMultipleStock_train_new import DynamicStockEnvTrain
 from env.EnvMultipleStock_validation import StockEnvValidation
 from env.EnvMultipleStock_trade import StockEnvTrade
 
@@ -99,12 +99,15 @@ def DRL_prediction(df,
                    unique_trade_date,
                    rebalance_window,
                    turbulence_threshold,
-                   initial):
+                   initial,
+                   count_df):
     ### make a prediction based on trained model###
 
     ## trading env
-    trade_data = data_split(df, start=unique_trade_date[iter_num - rebalance_window], end=unique_trade_date[iter_num])
+    trade_stock_count = count_df.iloc[iter_num - 1,1]
+    trade_data = data_split(df, start=count_df.iloc[iter_num - 1,0], end=count_df.iloc[iter_num,0])
     env_trade = DummyVecEnv([lambda: StockEnvTrade(trade_data,
+                                                   trade_stock_count = trade_stock_count,
                                                    turbulence_threshold=turbulence_threshold,
                                                    initial=initial,
                                                    previous_state=last_state,
@@ -142,7 +145,7 @@ def get_validation_sharpe(iteration):
     return sharpe
 
 
-def run_ensemble_strategy(df, unique_trade_date, rebalance_window, validation_window) -> None:
+def run_ensemble_strategy(df, unique_trade_date, rebalance_window, validation_window, start_date, val_start_date, count_df, stock_selected_df) -> None:
     """Ensemble Strategy that combines PPO, A2C and DDPG"""
     print("============Start Ensemble Strategy============")
     # for ensemble model, it's necessary to feed the last state
@@ -154,28 +157,36 @@ def run_ensemble_strategy(df, unique_trade_date, rebalance_window, validation_wi
     a2c_sharpe_list = []
 
     model_use = []
-
     # based on the analysis of the in-sample data
     #turbulence_threshold = 140
-    insample_turbulence = df[(df.datadate<20151000) & (df.datadate>=20090000)]
+    insample_turbulence = df[(df.datadate<val_start_date)& (df.datadate>=start_date)] 
     insample_turbulence = insample_turbulence.drop_duplicates(subset=['datadate'])
     insample_turbulence_threshold = np.quantile(insample_turbulence.turbulence.values, .90)
 
     start = time.time()
-    for i in range(rebalance_window + validation_window, len(unique_trade_date), rebalance_window):
-        print("============================================")
-        ## initial state is empty
-        if i - rebalance_window - validation_window == 0:
-            # inital state
+    start_idx = count_df[count_df['datadate'] == val_start_date].index[0]
+    for i in range(start_idx + 2, count_df.shape[0]):
+        if i == start_idx + 2:
             initial = True
         else:
-            # previous state
             initial = False
+    # for i in range(rebalance_window + validation_window, len(unique_trade_date), rebalance_window):
+    #     print("============================================")
+    #     ## initial state is empty
+    #     if i - rebalance_window - validation_window == 0:
+    #         # inital state
+    #         initial = True
+    #     else:
+    #         # previous state
+    #         initial = False
 
         # Tuning trubulence index based on historical data
         # Turbulence lookback window is one quarter
-        end_date_index = df.index[df["datadate"] == unique_trade_date[i - rebalance_window - validation_window]].to_list()[-1]
-        start_date_index = end_date_index - validation_window*30 + 1
+        end_date_index = df.index[df["datadate"] < count_df.iloc[i - 2, 0]].to_list()[-1] #end of test?
+        start_date_index = end_date_index - count_df.iloc[i - 3, 2]*count_df.iloc[i - 3, 1] + 1 # 30 stocks, I'll have a table for you too, maybe a dataframe?
+        
+        # end_date_index = df.index[df["datadate"] == unique_trade_date[i - rebalance_window - validation_window]].to_list()[-1] #end of test?
+        # start_date_index = end_date_index - validation_window*30 + 1 # 30 stocks, I'll have a table for you too, maybe a dataframe?
 
         historical_turbulence = df.iloc[start_date_index:(end_date_index + 1), :]
         #historical_turbulence = df[(df.datadate<unique_trade_date[i - rebalance_window - validation_window]) & (df.datadate>=(unique_trade_date[i - rebalance_window - validation_window - 63]))]
@@ -199,21 +210,31 @@ def run_ensemble_strategy(df, unique_trade_date, rebalance_window, validation_wi
 
         ############## Environment Setup starts ##############
         ## training env
-        train = data_split(df, start=20090000, end=unique_trade_date[i - rebalance_window - validation_window])
-        env_train = DummyVecEnv([lambda: StockEnvTrain(train)])
+        train = data_split(df, start=start_date, end=count_df.iloc[i - 2, 0])
+        env_train = DummyVecEnv([lambda: DynamicStockEnvTrain(train, count_df = count_df, stock_selected_df = stock_selected_df)])
+        # train = data_split(df, start=start_date, end=unique_trade_date[i - rebalance_window - validation_window])
+        # env_train = DummyVecEnv([lambda: StockEnvTrain(train)])
 
         ## validation env
-        validation = data_split(df, start=unique_trade_date[i - rebalance_window - validation_window],
-                                end=unique_trade_date[i - rebalance_window])
+        validation = data_split(df, start=count_df.iloc[i - 2, 0],
+                                end=count_df.iloc[i - 1, 0])
+        val_stock_count = count_df.iloc[i - 2,1]
+        val_day_count = count_df.iloc[i - 2,2]
+        # validation = data_split(df, start=unique_trade_date[i - rebalance_window - validation_window],
+        #                         end=unique_trade_date[i - rebalance_window])
         env_val = DummyVecEnv([lambda: StockEnvValidation(validation,
+                                                          val_stock_count = val_stock_count,
+                                                          val_day_count = val_day_count,
                                                           turbulence_threshold=turbulence_threshold,
                                                           iteration=i)])
+        print(f"validation shape: {validation.shape}")
+
         obs_val = env_val.reset()
         ############## Environment Setup ends ##############
 
         ############## Training and Validation starts ##############
-        print("======Model training from: ", 20090000, "to ",
-              unique_trade_date[i - rebalance_window - validation_window])
+        print("======Model training from: ", start_date, "to ",
+              count_df.iloc[i - 2, 0])
         # print("training: ",len(data_split(df, start=20090000, end=test.datadate.unique()[i-rebalance_window]) ))
         # print("==============Model Training===========")
         print("======A2C Training========")
@@ -226,8 +247,8 @@ def run_ensemble_strategy(df, unique_trade_date, rebalance_window, validation_wi
 
         print("======PPO Training========")
         model_ppo = train_PPO(env_train, model_name="PPO_100k_dow_{}".format(i), timesteps=100000)
-        print("======PPO Validation from: ", unique_trade_date[i - rebalance_window - validation_window], "to ",
-              unique_trade_date[i - rebalance_window])
+        print("======PPO Validation from: ", count_df.iloc[i - 2, 0], "to ",
+              count_df.iloc[i - 1, 0])
         DRL_validation(model=model_ppo, test_data=validation, test_env=env_val, test_obs=obs_val)
         sharpe_ppo = get_validation_sharpe(i)
         print("PPO Sharpe Ratio: ", sharpe_ppo)
@@ -235,8 +256,8 @@ def run_ensemble_strategy(df, unique_trade_date, rebalance_window, validation_wi
         print("======DDPG Training========")
         model_ddpg = train_DDPG(env_train, model_name="DDPG_10k_dow_{}".format(i), timesteps=10000)
         #model_ddpg = train_TD3(env_train, model_name="DDPG_10k_dow_{}".format(i), timesteps=20000)
-        print("======DDPG Validation from: ", unique_trade_date[i - rebalance_window - validation_window], "to ",
-              unique_trade_date[i - rebalance_window])
+        print("======DDPG Validation from: ", count_df.iloc[i - 2, 0], "to ",
+              count_df.iloc[i - 1, 0])
         DRL_validation(model=model_ddpg, test_data=validation, test_env=env_val, test_obs=obs_val)
         sharpe_ddpg = get_validation_sharpe(i)
 
@@ -257,14 +278,14 @@ def run_ensemble_strategy(df, unique_trade_date, rebalance_window, validation_wi
         ############## Training and Validation ends ##############
 
         ############## Trading starts ##############
-        print("======Trading from: ", unique_trade_date[i - rebalance_window], "to ", unique_trade_date[i])
+        print("======Trading from: ", count_df.iloc[i - 1, 0], "to ", count_df.iloc[i, 0])
         #print("Used Model: ", model_ensemble)
         last_state_ensemble = DRL_prediction(df=df, model=model_ensemble, name="ensemble",
                                              last_state=last_state_ensemble, iter_num=i,
                                              unique_trade_date=unique_trade_date,
                                              rebalance_window=rebalance_window,
                                              turbulence_threshold=turbulence_threshold,
-                                             initial=initial)
+                                             initial=initial,count_df=count_df)
         # print("============Trading Done============")
         ############## Trading ends ##############
 

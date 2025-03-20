@@ -26,16 +26,17 @@ class StockEnvValidation(gym.Env):
     """A stock trading environment for OpenAI gym"""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, df, day = 0, turbulence_threshold=140, iteration=''):
+    def __init__(self, df, stock_dim, day = 0, turbulence_threshold=140, iteration=''):
         #super(StockEnv, self).__init__()
         #money = 10 , scope = 1
         self.day = day
         self.df = df
+        self.stock_dim = stock_dim
         # action_space normalization and shape is STOCK_DIM
-        self.action_space = spaces.Box(low = -1, high = 1,shape = (STOCK_DIM,)) 
+        self.action_space = spaces.Box(low = -1, high = 1,shape = (self.stock_dim,)) 
         # Shape = 181: [Current Balance]+[prices 1-30]+[owned shares 1-30] 
         # +[macd 1-30]+ [rsi 1-30] + [cci 1-30] + [adx 1-30]
-        self.observation_space = spaces.Box(low=0, high=np.inf, shape = (181,))
+        self.observation_space = spaces.Box(low=0, high=np.inf, shape = (self.stock_dim*6+1,))
         # load data from a pandas dataframe
         self.data = self.df.loc[self.day,:]
         self.terminal = False     
@@ -43,7 +44,7 @@ class StockEnvValidation(gym.Env):
         # initalize state
         self.state = [INITIAL_ACCOUNT_BALANCE] + \
                       self.data.adjcp.values.tolist() + \
-                      [0]*STOCK_DIM + \
+                      [0]*self.stock_dim + \
                       self.data.macd.values.tolist() + \
                       self.data.rsi.values.tolist() + \
                       self.data.cci.values.tolist() + \
@@ -65,26 +66,26 @@ class StockEnvValidation(gym.Env):
     def _sell_stock(self, index, action):
         # perform sell action based on the sign of the action
         if self.turbulence<self.turbulence_threshold:
-            if self.state[index+STOCK_DIM+1] > 0:
+            if self.state[index+self.stock_dim+1] > 0:
                 #update balance
                 self.state[0] += \
-                self.state[index+1]*min(abs(action),self.state[index+STOCK_DIM+1]) * \
+                self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
                  (1- TRANSACTION_FEE_PERCENT)
                 
-                self.state[index+STOCK_DIM+1] -= min(abs(action), self.state[index+STOCK_DIM+1])
-                self.cost +=self.state[index+1]*min(abs(action),self.state[index+STOCK_DIM+1]) * \
+                self.state[index+self.stock_dim+1] -= min(abs(action), self.state[index+self.stock_dim+1])
+                self.cost +=self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
                  TRANSACTION_FEE_PERCENT
                 self.trades+=1
             else:
                 pass
         else:
             # if turbulence goes over threshold, just clear out all positions 
-            if self.state[index+STOCK_DIM+1] > 0:
+            if self.state[index+self.stock_dim+1] > 0:
                 #update balance
-                self.state[0] += self.state[index+1]*self.state[index+STOCK_DIM+1]* \
+                self.state[0] += self.state[index+1]*self.state[index+self.stock_dim+1]* \
                               (1- TRANSACTION_FEE_PERCENT)
-                self.state[index+STOCK_DIM+1] =0
-                self.cost += self.state[index+1]*self.state[index+STOCK_DIM+1]* \
+                self.state[index+self.stock_dim+1] =0
+                self.cost += self.state[index+1]*self.state[index+self.stock_dim+1]* \
                               TRANSACTION_FEE_PERCENT
                 self.trades+=1
             else:
@@ -100,7 +101,7 @@ class StockEnvValidation(gym.Env):
             self.state[0] -= self.state[index+1]*min(available_amount, action)* \
                               (1+ TRANSACTION_FEE_PERCENT)
 
-            self.state[index+STOCK_DIM+1] += min(available_amount, action)
+            self.state[index+self.stock_dim+1] += min(available_amount, action)
             
             self.cost+=self.state[index+1]*min(available_amount, action)* \
                               TRANSACTION_FEE_PERCENT
@@ -116,12 +117,12 @@ class StockEnvValidation(gym.Env):
 
         if self.terminal:
             plt.plot(self.asset_memory,'r')
-            plt.savefig('results/account_value_validation_{}.png'.format(self.iteration))
+            plt.savefig('DRL-for-Trading/results/account_value_validation_{}.png'.format(self.iteration))
             plt.close()
             df_total_value = pd.DataFrame(self.asset_memory)
-            df_total_value.to_csv('results/account_value_validation_{}.csv'.format(self.iteration))
+            df_total_value.to_csv('DRL-for-Trading/results/account_value_validation_{}.csv'.format(self.iteration))
             end_total_asset = self.state[0]+ \
-            sum(np.array(self.state[1:(STOCK_DIM+1)])*np.array(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)]))
+            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             #print("previous_total_asset:{}".format(self.asset_memory[0]))           
 
             #print("end_total_asset:{}".format(end_total_asset))
@@ -150,9 +151,9 @@ class StockEnvValidation(gym.Env):
             actions = actions * HMAX_NORMALIZE
             #actions = (actions.astype(int))
             if self.turbulence>=self.turbulence_threshold:
-                actions=np.array([-HMAX_NORMALIZE]*STOCK_DIM)
+                actions=np.array([-HMAX_NORMALIZE]*self.stock_dim)
             begin_total_asset = self.state[0]+ \
-            sum(np.array(self.state[1:(STOCK_DIM+1)])*np.array(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)]))
+            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             #print("begin_total_asset:{}".format(begin_total_asset))
             
             argsort_actions = np.argsort(actions)
@@ -170,20 +171,20 @@ class StockEnvValidation(gym.Env):
 
             self.day += 1
             self.data = self.df.loc[self.day,:]         
-            self.turbulence = self.data['turbulence'].values[0]
+            self.turbulence = self.data['VIX'].values[0]
             #print(self.turbulence)
             #load next state
             # print("stock_shares:{}".format(self.state[29:]))
             self.state =  [self.state[0]] + \
                     self.data.adjcp.values.tolist() + \
-                    list(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)]) + \
+                    list(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]) + \
                     self.data.macd.values.tolist() + \
                     self.data.rsi.values.tolist() + \
                     self.data.cci.values.tolist() + \
                     self.data.adx.values.tolist()
             
             end_total_asset = self.state[0]+ \
-            sum(np.array(self.state[1:(STOCK_DIM+1)])*np.array(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)]))
+            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             self.asset_memory.append(end_total_asset)
             #print("end_total_asset:{}".format(end_total_asset))
             
@@ -208,7 +209,7 @@ class StockEnvValidation(gym.Env):
         #initiate state
         self.state = [INITIAL_ACCOUNT_BALANCE] + \
                       self.data.adjcp.values.tolist() + \
-                      [0]*STOCK_DIM + \
+                      [0]*self.stock_dim + \
                       self.data.macd.values.tolist() + \
                       self.data.rsi.values.tolist()  + \
                       self.data.cci.values.tolist()  + \
