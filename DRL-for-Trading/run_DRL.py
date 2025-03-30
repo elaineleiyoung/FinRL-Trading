@@ -9,40 +9,50 @@ from preprocessing.preprocessors import *
 # config
 from config.config import *
 # model
-from model.models import *
+from model.models_0318 import *
 import os
 
 def run_model() -> None:
     """Train the model."""
+    start_date = pd.to_datetime('2012-09-04', format='%Y-%m-%d')
+    val_start_date = pd.to_datetime('2018-09-04', format='%Y-%m-%d') #
+    trade_start_date = pd.to_datetime('2018-12-03', format='%Y-%m-%d')
+    stock_selected_df = get_selected_stock(start_date)
+    report_date = stock_selected_df.datadate.unique().tolist()
 
-    # read and preprocess data
-    preprocessed_path = "done_data.csv"
+    preprocessed_path = 'DRL-for-Trading\done_data_0318.csv'
     if os.path.exists(preprocessed_path):
         data = pd.read_csv(preprocessed_path, index_col=0)
+        data["datadate"] = pd.to_datetime(data["datadate"])
     else:
-        data = preprocess_data()
-        data = add_turbulence(data)
+        data = preprocess_data(if_vix = True, selected_stocks = True,
+                               stock_selected_df = stock_selected_df,
+                               start_date = start_date)
         data.to_csv(preprocessed_path)
 
     print(data.head())
     print(data.size)
 
-    # 2015/10/01 is the date that validation starts
-    # 2016/01/01 is the date that real trading starts
-    # unique_trade_date needs to start from 2015/10/01 for validation purpose
-    unique_trade_date = data[(data.datadate > 20151001)&(data.datadate <= 20200707)].datadate.unique()
-    print(unique_trade_date)
+    # count_path = "DRL-for-Trading\preprocessing\count.csv"
+    # count_df = pd.read_csv(count_path, index_col=0)
+    # # start_date = count_df.iloc[0, 0]
+    # end_date = data.iloc[-1, 0]
+    # count_df.loc[count_df.shape[0]] = [end_date,0,0]
+    # # count_df[['datadate','stock_count','days_count']] = count_df[['datadate','stock_count','days_count']].astype(int)
 
-    # rebalance_window is the number of months to retrain the model
-    # validation_window is the number of months to validation the model and select for trading
-    rebalance_window = 63
-    validation_window = 63
+    # unique_trade_date = data[(data.datadate > val_start_date)&(data.datadate <= end_date)].datadate.unique()
+    # print(unique_trade_date)
+
+    # stock_selected_df['trade_date'] = pd.to_datetime(stock_selected_df['trade_date'])
+    # stock_selected_df['trade_date'] = stock_selected_df['trade_date'].apply(lambda x: int(x.strftime("%Y%m%d")))
     
+    # vix_data = load_vix_data("data/VIXCLS.csv")
     ## Ensemble Strategy
     run_ensemble_strategy(df=data, 
-                          unique_trade_date= unique_trade_date,
-                          rebalance_window = rebalance_window,
-                          validation_window=validation_window)
+                          report_date = report_date,
+                          start_date = start_date,
+                          val_start_date = val_start_date,
+                          stock_selected_df = stock_selected_df)
 
     #_logger.info(f"saving model version: {_version}")
 

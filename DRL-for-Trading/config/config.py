@@ -19,8 +19,9 @@ import os
 #TRAINING_DATA_FILE = "data/ETF_SPY_2009_2020.csv"
 TRAINING_DATA_FILE = "data/dow_30_2009_2020.csv"
 
-now = datetime.datetime.now()
-TRAINED_MODEL_DIR = f"trained_models/{now}"
+# now = datetime.datetime.now()
+now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") 
+TRAINED_MODEL_DIR = f"DRL-for-Trading/trained_models_2/{now}"
 os.makedirs(TRAINED_MODEL_DIR)
 TURBULENCE_DATA = "data/dow30_turbulence_index.csv"
 
