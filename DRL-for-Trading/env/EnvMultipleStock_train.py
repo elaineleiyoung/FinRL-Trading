@@ -17,34 +17,42 @@ class StockEnvTrain(gym.Env):
     """A stock trading environment for OpenAI gym (training mode)."""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, df, stock_dim, day = 0):
-        # super(StockEnv, self).__init__()
-        #money = 10 , scope = 1
+    def __init__(self, df, day=0):
+        """
+        Args:
+            df (pd.DataFrame): Preprocessed stock data with columns for adjcp, macd, rsi, cci, adx, VIX, etc.
+            day (int): Starting index.
+        """
+        super(StockEnvTrain, self).__init__()
+
         self.day = day
         self.df = df
-        self.stock_dim = stock_dim
+        
+        # track volume (shares traded) & number of trades each step
         self.volume = 0
         self.trades = 0
-        # action_space normalization and shape is STOCK_DIM
-        self.action_space = spaces.Box(low = -1, high = 1,shape = (self.stock_dim,)) 
-        # Shape = 181: [Current Balance]+[prices 1-30]+[owned shares 1-30] 
-        # +[macd 1-30]+ [rsi 1-30] + [cci 1-30] + [adx 1-30]
-        self.observation_space = spaces.Box(low=0, high=np.inf, shape = (self.stock_dim * 6 + 2,))
-        # load data from a pandas dataframe
-        self.data = self.df.loc[self.day,:]
-        self.terminal = False             
-        # initalize state
-        self.state = [INITIAL_ACCOUNT_BALANCE] + \
-                      self.data.adjcp.values.tolist() + \
-                      [0]*self.stock_dim + \
-                      self.data.macd.values.tolist() + \
-                      self.data.rsi.values.tolist() + \
-                      self.data.cci.values.tolist() + \
-                      self.data.adx.values.tolist()+ \
-                        [self.data.VIX.values[0]]
-        # initialize reward
-        self.reward = 0
         self.cost = 0
+        self.reward = 0
+
+        # define spaces
+        self.action_space = spaces.Box(low=-1, high=1, shape=(STOCK_DIM,))
+        # We want 1 (cash) + 30 (prices) + 30 (shares) + 30 (macd) + 30 (rsi) + 30 (cci) + 30 (adx) + 1 (VIX) = 182
+        self.observation_space = spaces.Box(low=0, high=np.inf, shape=(182,))
+
+        # load the first day’s data
+        self.data = self.df.loc[self.day, :]
+        self.terminal = False
+
+        # initialize state with 1+30+30+30+30+30+30+30+1 = 182
+        self.state = [
+            INITIAL_ACCOUNT_BALANCE
+        ] + self.data.adjcp.values.tolist() + \
+            [0]*STOCK_DIM + \
+            self.data.macd.values.tolist() + \
+            self.data.rsi.values.tolist() + \
+            self.data.cci.values.tolist() + \
+            self.data.adx.values.tolist() + \
+            [self.data.VIX.values[0]]  # appended exactly once here
 
         # track asset value & rewards
         self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
@@ -60,20 +68,18 @@ class StockEnvTrain(gym.Env):
 
     # ============== Sell ==============
     def _sell_stock(self, index, action):
+        """Execute a sell action based on the sign of action."""
         vix = self.state[-1]  # last element is VIX
         transaction_fee = self._get_dynamic_transaction_fee(vix)
-        current_shares = self.state[index + self.stock_dim + 1]
-        # perform sell action based on the sign of the action
+
+        current_shares = self.state[index + STOCK_DIM + 1]
         if current_shares > 0:
             shares_sold = min(abs(action), current_shares)
-            #update balance
             self.state[0] += self.state[index+1] * shares_sold * (1 - transaction_fee)
-            self.state[index+self.stock_dim+1] -= shares_sold
-            self.cost +=self.state[index+1]*shares_sold * transaction_fee
-            self.trades+=1
+            self.state[index + STOCK_DIM + 1] -= shares_sold
+            self.cost += self.state[index+1] * shares_sold * transaction_fee
+            self.trades += 1
             self.volume += shares_sold
-        else:
-            pass
 
     # ============== Buy ==============
     def _buy_stock(self, index, action):
@@ -85,7 +91,7 @@ class StockEnvTrain(gym.Env):
         shares_bought = min(available_amount, action)
 
         self.state[0] -= current_price * shares_bought * (1 + transaction_fee)
-        self.state[index+self.stock_dim+1] += shares_bought
+        self.state[index + STOCK_DIM + 1] += shares_bought
 
         self.cost += current_price * shares_bought * transaction_fee
         self.trades += 1
@@ -96,45 +102,38 @@ class StockEnvTrain(gym.Env):
         self.terminal = self.day >= len(self.df.index.unique()) - 1
 
         if self.terminal:
-            plt.plot(self.asset_memory,'r')
+            # end of episode
+            plt.plot(self.asset_memory, 'r')
             plt.savefig('results/account_value_train.png')
             plt.close()
-            end_total_asset = self.state[0]+ \
-            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
-            
-            #print("end_total_asset:{}".format(end_total_asset))
-            df_total_value = pd.DataFrame(self.asset_memory)
-            df_total_value.to_csv('results/account_value_train.csv')
-            #print("total_reward:{}".format(self.state[0]+sum(np.array(self.state[1:(STOCK_DIM+1)])*np.array(self.state[(STOCK_DIM+1):61]))- INITIAL_ACCOUNT_BALANCE ))
-            #print("total_cost: ", self.cost)
-            #print("total_trades: ", self.trades)
-            df_total_value.columns = ['account_value']
-            df_total_value['daily_return']=df_total_value.pct_change(1)
-            sharpe = (252**0.5)*df_total_value['daily_return'].mean()/ \
-                  df_total_value['daily_return'].std()
-            #print("Sharpe: ",sharpe)
-            #print("=================================")
-            df_rewards = pd.DataFrame(self.rewards_memory)
-            #df_rewards.to_csv('results/account_rewards_train.csv')
-            
-            # print('total asset: {}'.format(self.state[0]+ sum(np.array(self.state[1:29])*np.array(self.state[29:]))))
-            #with open('obs.pkl', 'wb') as f:  
-            #    pickle.dump(self.state, f)
-            
-            return self.state, self.reward, self.terminal,{}
 
+            end_total_asset = self.state[0] + sum(
+                np.array(self.state[1:(STOCK_DIM+1)]) *
+                np.array(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)])
+            )
+            df_total_value = pd.DataFrame(self.asset_memory, columns=['account_value'])
+            df_total_value['daily_return'] = df_total_value['account_value'].pct_change(1)
+            df_total_value.to_csv('results/account_value_train.csv', index=False)
+            
+            return self.state, self.reward, self.terminal, {}
         else:
             # reset volume/trades for this step
             self.volume = 0
             self.trades = 0
 
+            # 1) compute initial portfolio value
+            begin_total_asset = (
+                self.state[0] +
+                sum(
+                    np.array(self.state[1:(STOCK_DIM+1)]) *
+                    np.array(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)])
+                )
+            )
+
+            # 2) scale actions
             actions = actions * HMAX_NORMALIZE
-            #actions = (actions.astype(int))
-            
-            begin_total_asset = self.state[0]+ \
-            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
-            #print("begin_total_asset:{}".format(begin_total_asset))
-            
+
+            # 3) sell first, then buy
             argsort_actions = np.argsort(actions)
             sell_index = argsort_actions[:np.where(actions < 0)[0].shape[0]]
             buy_index = argsort_actions[::-1][:np.where(actions > 0)[0].shape[0]]
@@ -149,20 +148,24 @@ class StockEnvTrain(gym.Env):
 
             # 6) move to next day
             self.day += 1
-            self.data = self.df.loc[self.day,:]         
-            #load next state
-            # print("stock_shares:{}".format(self.state[29:]))
-            self.state =  [self.state[0]] + \
-                    self.data.adjcp.values.tolist() + \
-                    list(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]) + \
-                    self.data.macd.values.tolist() + \
-                    self.data.rsi.values.tolist() + \
-                    self.data.cci.values.tolist() + \
-                    self.data.adx.values.tolist()+ \
-                    [self.data.VIX.values[0]]
-            
-            end_total_asset = self.state[0]+ \
-            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+            self.data = self.df.loc[self.day, :]
+
+            # 7) rebuild state => 1+30+30+30+30+30+30+30+1=182
+            self.state = [
+                self.state[0]
+            ] + self.data.adjcp.values.tolist() + \
+                list(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)]) + \
+                self.data.macd.values.tolist() + \
+                self.data.rsi.values.tolist() + \
+                self.data.cci.values.tolist() + \
+                self.data.adx.values.tolist() + \
+                [self.data.VIX.values[0]]
+
+            # 8) compute new asset
+            end_total_asset = self.state[0] + sum(
+                np.array(self.state[1:(STOCK_DIM+1)]) *
+                np.array(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)])
+            )
             self.asset_memory.append(end_total_asset)
 
             # 9) custom reward logic
@@ -174,8 +177,6 @@ class StockEnvTrain(gym.Env):
 
             # 10) scale reward
             self.reward *= REWARD_SCALING
-        # print(f"Step {self.day}, Reward: {self.reward}")
-        # print("Checking for NaN in state:", np.isnan(self.state).sum())
 
             return self.state, self.reward, self.terminal, {}
 
@@ -189,19 +190,18 @@ class StockEnvTrain(gym.Env):
         self.reward = 0
         self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         self.rewards_memory = []
-        #initiate state
-        self.state = [INITIAL_ACCOUNT_BALANCE] + \
-                      self.data.adjcp.values.tolist() + \
-                      [0]*self.stock_dim + \
-                      self.data.macd.values.tolist() + \
-                      self.data.rsi.values.tolist() + \
-                      self.data.cci.values.tolist() + \
-                      self.data.adx.values.tolist() + \
-                      [self.data.VIX.values[0]]
-        # iteration += 1 
-        # print("Reset state shape:", np.array(self.state).shape)
-        # print("Checking for NaN in reset state:", np.isnan(self.state).sum())
 
+        # build initial state => 182
+        self.state = (
+            [INITIAL_ACCOUNT_BALANCE] +
+            self.data.adjcp.values.tolist() +
+            [0]*STOCK_DIM +
+            self.data.macd.values.tolist() +
+            self.data.rsi.values.tolist() +
+            self.data.cci.values.tolist() +
+            self.data.adx.values.tolist() +
+            [self.data.VIX.values[0]]
+        )
         return self.state
 
     def render(self, mode='human'):

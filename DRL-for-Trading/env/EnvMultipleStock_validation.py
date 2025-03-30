@@ -18,39 +18,42 @@ class StockEnvValidation(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, df, stock_dim, day = 0, turbulence_threshold=140, iteration=''):
-        # super(StockEnv, self).__init__()
-        #money = 10 , scope = 1
+    def __init__(self, df, day=0, turbulence_threshold=140, iteration=''):
+        super(StockEnvValidation, self).__init__()
+
         self.day = day
         self.df = df
-        self.stock_dim = stock_dim
-        # action_space normalization and shape is STOCK_DIM
-        self.action_space = spaces.Box(low = -1, high = 1,shape = (self.stock_dim,)) 
-        # Shape = 182: [Current Balance]+[prices 1-30]+[owned shares 1-30] 
-        # +[macd 1-30]+ [rsi 1-30] + [cci 1-30] + [adx 1-30] + vix
-        self.observation_space = spaces.Box(low=0, high=np.inf, shape = (self.stock_dim*6+2,))
-        # load data from a pandas dataframe
-        self.data = self.df.loc[self.day,:]
-        self.terminal = False     
         self.turbulence_threshold = turbulence_threshold
-        # initalize state
-        self.state = [INITIAL_ACCOUNT_BALANCE] + \
-                      self.data.adjcp.values.tolist() + \
-                      [0]*self.stock_dim + \
-                      self.data.macd.values.tolist() + \
-                      self.data.rsi.values.tolist() + \
-                      self.data.cci.values.tolist() + \
-                      self.data.adx.values.tolist()+ \
-                        [self.data.VIX.values[0]]
-        # initialize reward
-        self.reward = 0
-        self.turbulence = 0
+        self.iteration = iteration
+
+        # define spaces
+        self.action_space = spaces.Box(low=-1, high=1, shape=(STOCK_DIM,))
+        # 1 + 30 + 30 + 30 + 30 + 30 + 30 + 30 + 1 = 182
+        self.observation_space = spaces.Box(low=0, high=np.inf, shape=(182,))
+
+        self.data = self.df.loc[self.day, :]
+        self.terminal = False
+
+        # build initial state => 182 elements
+        self.state = (
+            [INITIAL_ACCOUNT_BALANCE] +
+            self.data.adjcp.values.tolist() +
+            [0]*STOCK_DIM +
+            self.data.macd.values.tolist() +
+            self.data.rsi.values.tolist() +
+            self.data.cci.values.tolist() +
+            self.data.adx.values.tolist() +
+            [self.data.VIX.values[0]]
+        )
+
         self.volume = 0
         self.cost = 0
         self.trades = 0
+        self.turbulence = 0
+        self.reward = 0
         self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         self.rewards_memory = []
-        self.iteration = iteration
+
         self._seed()
 
     def _get_dynamic_transaction_fee(self, vix):
@@ -61,32 +64,15 @@ class StockEnvValidation(gym.Env):
     def _sell_stock(self, index, action):
         vix = self.state[-1]
         transaction_fee = self._get_dynamic_transaction_fee(vix)
-        # perform sell action based on the sign of the action
-        if self.turbulence<self.turbulence_threshold:
-            if self.state[index+self.stock_dim+1] > 0:
-                #update balance
-                self.state[0] += \
-                self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
-                 (1- transaction_fee)
-                
-                self.state[index+self.stock_dim+1] -= min(abs(action), self.state[index+self.stock_dim+1])
-                self.cost +=self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
-                 transaction_fee
-                self.trades+=1
-            else:
-                pass
-        else:
-            # if turbulence goes over threshold, just clear out all positions 
-            if self.state[index+self.stock_dim+1] > 0:
-                #update balance
-                self.state[0] += self.state[index+1]*self.state[index+self.stock_dim+1]* \
-                              (1- transaction_fee)
-                self.state[index+self.stock_dim+1] =0
-                self.cost += self.state[index+1]*self.state[index+self.stock_dim+1]* \
-                              transaction_fee
-                self.trades+=1
-            else:
-                pass
+        current_shares = self.state[index + STOCK_DIM + 1]
+
+        if current_shares > 0:
+            shares_sold = min(abs(action), current_shares)
+            self.state[0] += self.state[index+1] * shares_sold * (1 - transaction_fee)
+            self.state[index + STOCK_DIM + 1] -= shares_sold
+            self.cost += self.state[index+1] * shares_sold * transaction_fee
+            self.trades += 1
+            self.volume += shares_sold
     
     def _buy_stock(self, index, action):
         vix = self.state[-1]
@@ -110,22 +96,13 @@ class StockEnvValidation(gym.Env):
         self.terminal = self.day >= (len(self.df.index.unique()) - 1)
 
         if self.terminal:
-            plt.plot(self.asset_memory,'r')
-            plt.savefig('results/account_value_validation_{}.png'.format(self.iteration))
+            plt.plot(self.asset_memory, 'r')
+            plt.savefig(f'results/account_value_validation_{self.iteration}.png')
             plt.close()
-            df_total_value = pd.DataFrame(self.asset_memory)
-            df_total_value.to_csv('results/account_value_validation_{}.csv'.format(self.iteration))
-            end_total_asset = self.state[0]+ \
-            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
-            #print("previous_total_asset:{}".format(self.asset_memory[0]))           
 
-            # df_total_value = pd.DataFrame(self.asset_memory, columns=['account_value'])
-            # df_total_value['daily_return'] = df_total_value['account_value'].pct_change(1)
-            # df_total_value.to_csv(f'results/account_value_validation_{self.iteration}.csv', index=False)
-            df_total_value.columns = ['account_value']
-            df_total_value['daily_return']=df_total_value.pct_change(1)
-            sharpe = (4**0.5)*df_total_value['daily_return'].mean()/ \
-                  df_total_value['daily_return'].std()
+            df_total_value = pd.DataFrame(self.asset_memory, columns=['account_value'])
+            df_total_value['daily_return'] = df_total_value['account_value'].pct_change(1)
+            df_total_value.to_csv(f'results/account_value_validation_{self.iteration}.csv', index=False)
 
             return self.state, self.reward, self.terminal, {}
         else:
@@ -133,15 +110,16 @@ class StockEnvValidation(gym.Env):
             self.volume = 0
             self.trades = 0
 
+            begin_total_asset = self.state[0] + sum(
+                np.array(self.state[1:(STOCK_DIM+1)]) *
+                np.array(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)])
+            )
+
             actions = actions * HMAX_NORMALIZE
-            
-            #actions = (actions.astype(int))
-            if self.turbulence>=self.turbulence_threshold:
-                actions=np.array([-HMAX_NORMALIZE]*self.stock_dim)
-            begin_total_asset = self.state[0]+ \
-            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
-            #print("begin_total_asset:{}".format(begin_total_asset))
-            
+            self.turbulence = self.data['turbulence'].values[0]
+            if self.turbulence >= self.turbulence_threshold:
+                actions = np.array([-HMAX_NORMALIZE] * STOCK_DIM)
+
             argsort_actions = np.argsort(actions)
             sell_index = argsort_actions[:np.where(actions < 0)[0].shape[0]]
             buy_index = argsort_actions[::-1][:np.where(actions > 0)[0].shape[0]]
@@ -153,22 +131,23 @@ class StockEnvValidation(gym.Env):
 
             # next day
             self.day += 1
-            self.data = self.df.loc[self.day,:]         
-            self.turbulence = self.data['VIX'].values[0]
-            #print(self.turbulence)
-            #load next state
-            # print("stock_shares:{}".format(self.state[29:]))
-            self.state =  [self.state[0]] + \
-                    self.data.adjcp.values.tolist() + \
-                    list(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]) + \
-                    self.data.macd.values.tolist() + \
-                    self.data.rsi.values.tolist() + \
-                    self.data.cci.values.tolist() + \
-                    self.data.adx.values.tolist()+ \
-                    [self.data.VIX.values[0]]
-            
-            end_total_asset = self.state[0]+ \
-            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+            if self.day < len(self.df.index.unique()):
+                self.data = self.df.loc[self.day, :]
+
+            self.state = [
+                self.state[0]
+            ] + self.data.adjcp.values.tolist() + \
+                list(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)]) + \
+                self.data.macd.values.tolist() + \
+                self.data.rsi.values.tolist() + \
+                self.data.cci.values.tolist() + \
+                self.data.adx.values.tolist() + \
+                [self.data.VIX.values[0]]
+
+            end_total_asset = self.state[0] + sum(
+                np.array(self.state[1:(STOCK_DIM+1)]) *
+                np.array(self.state[(STOCK_DIM+1):(STOCK_DIM*2+1)])
+            )
             self.asset_memory.append(end_total_asset)
 
             volume = self.volume
@@ -189,24 +168,7 @@ class StockEnvValidation(gym.Env):
         self.trades = 0
         self.cost = 0
         self.reward = 0
-        self.terminal = False 
-        #self.iteration=self.iteration
-        self.rewards_memory = []
-        #initiate state
-        self.state = [INITIAL_ACCOUNT_BALANCE] + \
-                      self.data.adjcp.values.tolist() + \
-                      [0]*self.stock_dim + \
-                      self.data.macd.values.tolist() + \
-                      self.data.rsi.values.tolist()  + \
-                      self.data.cci.values.tolist()  + \
-                      self.data.adx.values.tolist() + \
-                    [self.data.VIX.values[0]]
-            
-        return self.state
-    
-    def render(self, mode='human',close=False):
-        # return self.state
-    
+        self.terminal = False
 
         self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         self.rewards_memory = []
