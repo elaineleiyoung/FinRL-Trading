@@ -292,48 +292,7 @@ def run_ensemble_strategy(df, unique_trade_date, rebalance_window, validation_wi
                                              unique_trade_date=unique_trade_date,
                                              rebalance_window=rebalance_window,
                                              turbulence_threshold=turbulence_threshold,
-                                             initial=initial)
-        ### tracking each model result
-        last_state_a2c = DRL_prediction(
-            df,
-            model_a2c,
-            "a2c",
-            last_state_a2c,
-            i,
-            unique_trade_date,
-            rebalance_window,
-            turbulence_threshold,
-            initial,
-        )
-        last_state_ppo = DRL_prediction(
-            df,
-            model_ppo,
-            "ppo",
-            last_state_ppo,
-            i,
-            unique_trade_date,
-            rebalance_window,
-            turbulence_threshold,
-            initial,
-        )
-        last_state_ddpg = DRL_prediction(
-            df,
-            model_ddpg,
-            "ddpg",
-            last_state_ddpg,
-            i,
-            unique_trade_date,
-            rebalance_window,
-            turbulence_threshold,
-            initial,
-        )
-    Csv_files_dir = "results/latest_run/"
-    os.makedirs(Csv_files_dir, exist_ok=True)
-    pd.DataFrame(ppo_sharpe_list).to_csv(Csv_files_dir + "ppo_sharpe_list.csv")
-    pd.DataFrame(a2c_sharpe_list).to_csv(Csv_files_dir + "a2c_sharpe_list.csv")
-    pd.DataFrame(ddpg_sharpe_list).to_csv(Csv_files_dir + "ddpg_sharpe_list.csv")
-    pd.DataFrame(model_use).to_csv(Csv_files_dir + "model_use.csv")
-    ###
+                                             initial=initial,count_df=count_df)
         # print("============Trading Done============")
         ############## Trading ends ##############
 
