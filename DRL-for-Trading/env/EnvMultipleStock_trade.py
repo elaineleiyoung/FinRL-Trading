@@ -7,6 +7,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pickle
+from config import config
 
 # shares normalization factor
 # 100 shares per trade
@@ -29,13 +30,14 @@ class StockEnvTrade(gym.Env):
     def __init__(self, df, stock_dim, day = 0,turbulence_threshold=140
                  ,initial=True, previous_state=[], model_name='', iteration='',
                  initial_arrangement = None, initial_balance = None,
-                 new_balance = None, arrangement = None):
+                 new_balance = None, arrangement = None, if_fix = False):
         #super(StockEnv, self).__init__()
         #money = 10 , scope = 1
         self.day = day
         self.df = df
         self.stock_dim = stock_dim
         self.initial = initial
+        self.if_fix = if_fix
         if self.initial:
             self.initial_arrangement = initial_arrangement
             self.initial_balance = initial_balance
@@ -128,10 +130,10 @@ class StockEnvTrade(gym.Env):
 
         if self.terminal:
             plt.plot(self.asset_memory,'r')
-            plt.savefig('DRL-for-Trading/results/account_value_trade_{}_{}.png'.format(self.model_name, self.iteration))
+            plt.savefig(config.RESULTS_DIR + '/account_value_trade_{}_{}.png'.format(self.model_name, self.iteration))
             plt.close()
             df_total_value = pd.DataFrame(self.asset_memory)
-            df_total_value.to_csv('DRL-for-Trading/results/account_value_trade_{}_{}.csv'.format(self.model_name, self.iteration))
+            df_total_value.to_csv(config.RESULTS_DIR + '/account_value_trade_{}_{}.csv'.format(self.model_name, self.iteration))
             end_total_asset = self.state[0]+ \
             sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             print("previous_total_asset:{}".format(self.asset_memory[0]))           
@@ -148,7 +150,7 @@ class StockEnvTrade(gym.Env):
             print("Sharpe: ",sharpe)
             
             df_rewards = pd.DataFrame(self.rewards_memory)
-            df_rewards.to_csv('DRL-for-Trading/results/account_rewards_trade_{}_{}.csv'.format(self.model_name, self.iteration))
+            df_rewards.to_csv(config.RESULTS_DIR + '/account_rewards_trade_{}_{}.csv'.format(self.model_name, self.iteration))
             
             # print('total asset: {}'.format(self.state[0]+ sum(np.array(self.state[1:29])*np.array(self.state[29:]))))
             #with open('obs.pkl', 'wb') as f:  
@@ -183,7 +185,7 @@ class StockEnvTrade(gym.Env):
 
             self.day += 1
             self.data = self.df.loc[self.day,:]         
-            self.turbulence = self.data['VIX'].values[0]
+            self.turbulence = self.data['turbulence'].values[0]
             #print(self.turbulence)
             #load next state
             # print("stock_shares:{}".format(self.state[29:]))
@@ -240,10 +242,29 @@ class StockEnvTrade(gym.Env):
             sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             self.asset_memory = [init_total_asset]
         else:
-            # previous_total_asset = self.previous_state[0]+ \
-            # sum(np.array(self.previous_state[1:(self.stock_dim+1)])*np.array(self.previous_state[(self.stock_dim+1):(self.stock_dim*2+1)]))
-            # self.asset_memory = [previous_total_asset]
-            #self.asset_memory = [self.previous_state[0]]
+            if self.if_fix:
+                previous_total_asset = self.previous_state[0]+ \
+                sum(np.array(self.previous_state[1:(self.stock_dim+1)])*np.array(self.previous_state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+
+                self.state = [ self.previous_state[0]] + \
+                            self.data.adjcp.values.tolist() + \
+                            self.previous_state[(self.stock_dim+1):(self.stock_dim*2+1)]+ \
+                            self.data.macd.values.tolist() + \
+                            self.data.rsi.values.tolist()  + \
+                            self.data.cci.values.tolist()  + \
+                            self.data.adx.values.tolist() 
+                self.asset_memory = [self.previous_state[0]]
+            else:
+                self.state = [self.new_balance] + \
+                            self.data.adjcp.values.tolist() + \
+                            self.arrangement+ \
+                            self.data.macd.values.tolist() + \
+                            self.data.rsi.values.tolist()  + \
+                            self.data.cci.values.tolist()  + \
+                            self.data.adx.values.tolist() 
+                previous_total_asset = self.new_balance+ \
+                sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+
             self.day = 0
             self.data = self.df.loc[self.day,:]
             self.turbulence = 0
@@ -256,22 +277,6 @@ class StockEnvTrade(gym.Env):
             #self.previous_state[(STOCK_DIM+1):(STOCK_DIM*2+1)]
             #[0]*STOCK_DIM + \
 
-            # self.state = [ self.previous_state[0]] + \
-            #               self.data.adjcp.values.tolist() + \
-            #               self.previous_state[(self.stock_dim+1):(self.stock_dim*2+1)]+ \
-            #               self.data.macd.values.tolist() + \
-            #               self.data.rsi.values.tolist()  + \
-            #               self.data.cci.values.tolist()  + \
-            #               self.data.adx.values.tolist() 
-            self.state = [self.new_balance] + \
-                          self.data.adjcp.values.tolist() + \
-                          self.arrangement+ \
-                          self.data.macd.values.tolist() + \
-                          self.data.rsi.values.tolist()  + \
-                          self.data.cci.values.tolist()  + \
-                          self.data.adx.values.tolist() 
-            previous_total_asset = self.new_balance+ \
-            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             self.asset_memory = [previous_total_asset]
             
         return self.state

@@ -21,8 +21,11 @@ TRAINING_DATA_FILE = "data/dow_30_2009_2020.csv"
 
 # now = datetime.datetime.now()
 now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S") 
-TRAINED_MODEL_DIR = f"DRL-for-Trading/trained_models_2/{now}"
+TRAINED_MODEL_DIR = f"DRL-for-Trading/trained_models_fix/{now}"
 os.makedirs(TRAINED_MODEL_DIR)
+RESULTS_DIR = "DRL-for-Trading/results_fix"
+if not os.path.exists(RESULTS_DIR):
+    os.makedirs(RESULTS_DIR)
 TURBULENCE_DATA = "data/dow30_turbulence_index.csv"
 
 TESTING_DATA_FILE = "test.csv"
