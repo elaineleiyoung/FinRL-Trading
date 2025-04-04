@@ -81,6 +81,9 @@ class StockEnvTrade(gym.Env):
         return base_fee + (vix * delta)
 
     def _sell_stock(self, index, action):
+        if abs(action) < 1:
+            return
+
         # perform sell action based on the sign of the action
         if len(self.state) > 182:  # means we have VIX appended
             vix = self.state[-1]
@@ -114,6 +117,8 @@ class StockEnvTrade(gym.Env):
                 pass
     
     def _buy_stock(self, index, action):
+        if abs(action) < 1:
+            return
         if len(self.state) > 182:  # means we have VIX appended
             vix = self.state[-1]
             transaction_fee = self._get_dynamic_transaction_fee(vix)
@@ -140,7 +145,7 @@ class StockEnvTrade(gym.Env):
         base_reward = end_total_asset - begin_total_asset
         alpha_volume = 0.01 * (volume / 1e6)
         alpha_trades = 0.05 * num_trades
-        alpha_vix = 0.02 * (vix / 20)
+        alpha_vix = 0.05 * (vix / 20)
         penalty = alpha_volume + alpha_trades + alpha_vix
         adjusted_reward = base_reward - penalty * abs(base_reward)
         return adjusted_reward
