@@ -164,25 +164,32 @@ def get_selected_stock(date, if_single = False):
         df = df[df['datadate'] >= date]
     return df
 
-def preprocess_selected_stock(df, start_date):
-    report_date = (list(df.datadate.unique()))
-    report_date.sort()
+def preprocess_selected_stock(df, start_date, if_fix = False):
     price_df = get_price_data(start_date)
-    trading_df = pd.DataFrame()
-    for i in range(len(report_date)-1):
-        temp_df = price_df[
-            (price_df['datadate'] < report_date[i+1]) &
-            (price_df['tic'].isin(df[df['datadate'] == report_date[i]]['tic']))
-        ]
-        trading_df = pd.concat([trading_df, temp_df])
-    trading_df.drop_duplicates(subset=['datadate', 'tic'], inplace = True)
+    if if_fix:
+        last_selected_stocks = df[df['datadate'] == df['datadate'].max()]['tic']
+        valid_tics = price_df[price_df['tic'].isin(last_selected_stocks) & (price_df['datadate'] >= start_date)]
+        valid_tics = valid_tics.groupby('tic')['datadate'].min()
+        valid_tics = valid_tics[valid_tics <= start_date].index.tolist()
+        trading_df = price_df[price_df['tic'].isin(valid_tics) & (price_df['datadate'] >= start_date)]
+    else:
+        report_date = (list(df.datadate.unique()))
+        report_date.sort()
+        trading_df = pd.DataFrame()
+        for i in range(len(report_date)-1):
+            temp_df = price_df[
+                (price_df['datadate'] < report_date[i+1]) &
+                (price_df['tic'].isin(df[df['datadate'] == report_date[i]]['tic']))
+            ]
+            trading_df = pd.concat([trading_df, temp_df])
+        trading_df.drop_duplicates(subset=['datadate', 'tic'], inplace = True)
     trading_df = trading_df.sort_values(['datadate','tic'], ignore_index=True)
     return trading_df
 
-def preprocess_data(if_vix = False, selected_stocks = False, stock_selected_df = None, datadate = False, start_date = 20010101):
+def preprocess_data(if_fix = False, if_vix = False, selected_stocks = False, stock_selected_df = None, datadate = False, start_date = 20010101):
     """data preprocessing pipeline"""
     if selected_stocks:
-        df_preprocess = preprocess_selected_stock(df = stock_selected_df, start_date = start_date)
+        df_preprocess = preprocess_selected_stock(df = stock_selected_df, start_date = start_date, if_fix = if_fix)
     else:
         df = load_dataset(file_name=config.TRAINING_DATA_FILE)
         # get data after 2009
@@ -198,25 +205,25 @@ def preprocess_data(if_vix = False, selected_stocks = False, stock_selected_df =
         vix_data = load_vix_data("data/VIXCLS.csv")
         df_preprocess = add_vix_data(df_preprocess, vix_data)
     else:
-        df_preprocess = add_turbulence(df_preprocess)
+        df_preprocess = add_turbulence(df_preprocess, if_fix)
     # fill the missing values at the beginning
     df_preprocess.fillna(method='bfill',inplace=True)
     return df_preprocess
 
-def add_turbulence(df):
+def add_turbulence(df, if_fix):
     """
     add turbulence index from a precalcualted dataframe
     :param data: (df) pandas dataframe
     :return: (df) pandas dataframe
     """
-    turbulence_index = calcualte_turbulence(df)
+    turbulence_index = calcualte_turbulence(df, if_fix)
     df = df.merge(turbulence_index, on='datadate')
     df = df.sort_values(['datadate','tic']).reset_index(drop=True)
     return df
 
 
 
-def calcualte_turbulence(df):
+def calcualte_turbulence(df, if_fix):
     """calculate turbulence index based on dow 30"""
     # can add other market assets
     
@@ -227,53 +234,90 @@ def calcualte_turbulence(df):
     turbulence_index = [0]*start
     #turbulence_index = [0]
     count=0
-    for i in range(start,len(unique_date)):
-        current_price = df_price_pivot[df_price_pivot.index == unique_date[i]]
-        hist_price = df_price_pivot[[n in unique_date[0:i] for n in df_price_pivot.index ]]
-        cov_temp = hist_price.cov()
-        current_temp=(current_price - np.mean(hist_price,axis=0))
-        temp = current_temp.values.dot(np.linalg.inv(cov_temp)).dot(current_temp.values.T)
-        if temp>0:
-            count+=1
-            if count>2:
-                turbulence_temp = temp[0][0]
+    if if_fix:
+        for i in range(start,len(unique_date)):
+            current_price = df_price_pivot[df_price_pivot.index == unique_date[i]]
+            hist_price = df_price_pivot[[n in unique_date[0:i] for n in df_price_pivot.index ]]
+            cov_temp = hist_price.cov()
+            current_temp=(current_price - np.mean(hist_price,axis=0))
+            temp = current_temp.values.dot(np.linalg.inv(cov_temp)).dot(current_temp.values.T)
+            if temp>0:
+                count+=1
+                if count>2:
+                    turbulence_temp = temp[0][0]
+                else:
+                    #avoid large outlier because of the calculation just begins
+                    turbulence_temp=0
             else:
-                #avoid large outlier because of the calculation just begins
                 turbulence_temp=0
-        else:
-            turbulence_temp=0
-        turbulence_index.append(turbulence_temp)
-    
-    
-    turbulence_index = pd.DataFrame({'datadate':df_price_pivot.index,
-                                     'turbulence':turbulence_index})
+            turbulence_index.append(turbulence_temp)
+        
+        
+        # turbulence_index = pd.DataFrame({'datadate':df_price_pivot.index,
+        #                                 'turbulence':turbulence_index})
+    else:
+        # # Pivot price data
+        # df_price_pivot = df.pivot(index='datadate', columns='tic', values='adjcp')
+        # unique_date = df.datadate.unique()
+        # start = 252
+        # turbulence_index = [0] * start
+        # count = 0
+
+        for i in range(start, len(unique_date)):
+            current_price = df_price_pivot.loc[[unique_date[i]]].fillna(0)
+            hist_price = df_price_pivot[df_price_pivot.index.isin(unique_date[:i])].dropna(how='all')
+
+            # if hist_price.empty:
+            #     print(f"Skipping {unique_date[i]} due to insufficient historical data")
+            #     turbulence_index.append(0)
+            #     continue
+            cov_temp = hist_price.cov().fillna(0)
+            try:
+                inv_cov = np.linalg.inv(cov_temp + np.eye(cov_temp.shape[0]) * 1e-6) 
+            except np.linalg.LinAlgError:
+                inv_cov = np.linalg.pinv(cov_temp) 
+
+            current_temp = (current_price - hist_price.mean()).fillna(0)
+            temp = current_temp.values.dot(inv_cov).dot(current_temp.values.T)
+            if temp > 0:
+                count += 1
+                turbulence_temp = temp[0][0] if count > 2 else 0  
+            else:
+                turbulence_temp = 0
+            turbulence_index.append(turbulence_temp)
+
+    turbulence_index = pd.DataFrame({'datadate': df_price_pivot.index, 'turbulence': turbulence_index})
     return turbulence_index
 
-def get_training_data(df, stock_selected_df, start_date, val_start_date, trade_start_date, trade_end_date):
-    stock_selected_df = get_selected_stock(trade_start_date, if_single=True)
-    stock_list = set(stock_selected_df['tic'])
+def get_training_data(df, stock_selected_df, start_date, val_start_date, trade_start_date, trade_end_date, if_fix):
+    if not if_fix:
+        stock_selected_df = get_selected_stock(trade_start_date, if_single=True)
+        stock_list = set(stock_selected_df['tic'])
 
-    df = df[(df['datadate'] < trade_end_date) & (df['tic'].isin(stock_list))]
-    df = df.sort_values(['datadate', 'tic'], ignore_index=True)
+        df = df[(df['datadate'] < trade_end_date) & (df['tic'].isin(stock_list))]
+        df = df.sort_values(['datadate', 'tic'], ignore_index=True)
 
-    # all_dates = df['datadate'].unique()
-    # all_tics = list(stock_list)
+        # all_dates = df['datadate'].unique()
+        # all_tics = list(stock_list)
 
-    # full_index = pd.MultiIndex.from_product([all_dates, all_tics], names=['datadate', 'tic'])
-    # df = df.set_index(['datadate', 'tic']).reindex(full_index).reset_index()
+        # full_index = pd.MultiIndex.from_product([all_dates, all_tics], names=['datadate', 'tic'])
+        # df = df.set_index(['datadate', 'tic']).reindex(full_index).reset_index()
 
-    # df.fillna(0, inplace=True)
-    total_days = df['datadate'].nunique() 
-    tic_counts = df.groupby('tic')['datadate'].nunique()  
-    valid_tics = tic_counts[tic_counts == total_days].index 
-    df = df[df['tic'].isin(valid_tics)]
+        # df.fillna(0, inplace=True)
+        total_days = df['datadate'].nunique() 
+        tic_counts = df.groupby('tic')['datadate'].nunique()  
+        valid_tics = tic_counts[tic_counts == total_days].index 
+        stock_count = len(valid_tics)
+        df = df[df['tic'].isin(valid_tics)]
+    else:
+        stock_count = len(df[df['datadate'] == df['datadate'].max()]['tic'])
     df = df.sort_values(['datadate', 'tic'], ignore_index=True)  
 
     train_set = data_split(df, start=start_date, end=val_start_date)
     val_set = data_split(df, start=val_start_date, end=trade_start_date)
     trade_set = data_split(df, start=trade_start_date, end=trade_end_date)
 
-    return len(valid_tics), df.tic.unique().tolist(), train_set, val_set, trade_set
+    return stock_count, df.tic.unique().tolist(), train_set, val_set, trade_set
 
 def calculate_mean_variance(start_date, trade_start_date, stock_pool, initial = 1000000, risk_aversion=1.0):
     price_df = get_price_data(start_date)

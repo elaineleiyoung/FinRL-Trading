@@ -6,6 +6,8 @@ from gym import spaces
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import pickle
+from config import config
 
 HMAX_NORMALIZE = 100
 INITIAL_ACCOUNT_BALANCE = 1000000
@@ -118,11 +120,11 @@ class StockEnvValidation(gym.Env):
         self.terminal = self.day >= (len(self.df.index.unique()) - 1)
 
         if self.terminal:
-            plt.plot(self.asset_memory, 'r')
-            plt.savefig(f'results/account_value_validation_{self.iteration}.png')
+            plt.plot(self.asset_memory,'r')
+            plt.savefig(config.RESULTS_DIR + '/account_value_validation_{}.png'.format(self.iteration))
             plt.close()
             df_total_value = pd.DataFrame(self.asset_memory)
-            df_total_value.to_csv('results/account_value_validation_{}.csv'.format(self.iteration))
+            df_total_value.to_csv(config.RESULTS_DIR + '/account_value_validation_{}.csv'.format(self.iteration))
             end_total_asset = self.state[0]+ \
             sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             #print("previous_total_asset:{}".format(self.asset_memory[0]))           
@@ -177,7 +179,7 @@ class StockEnvValidation(gym.Env):
             # next day
             self.day += 1
             self.data = self.df.loc[self.day,:]         
-            self.turbulence = self.data['VIX'].values[0]
+            self.turbulence = self.data['turbulence'].values[0]
             #print(self.turbulence)
             #load next state
             # print("stock_shares:{}".format(self.state[29:]))
