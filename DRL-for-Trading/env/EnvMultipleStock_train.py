@@ -24,7 +24,8 @@ class StockEnvTrain(gym.Env):
     """A stock trading environment for OpenAI gym"""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, df, stock_dim, day = 0):
+    def __init__(self, df, stock_dim, day = 0, if_mvo = False,
+                 initial_arrangement = None, initial_balance = None):
         #super(StockEnv, self).__init__()
         #money = 10 , scope = 1
         self.day = day
@@ -38,19 +39,34 @@ class StockEnvTrain(gym.Env):
         # load data from a pandas dataframe
         self.data = self.df.loc[self.day,:]
         self.terminal = False             
+        self.if_mvo = if_mvo
+        if self.if_mvo:
+            self.initial_arrangement = initial_arrangement
+            self.initial_balance = initial_balance
+            self.state = [self.initial_balance] + \
+                          self.data.adjcp.values.tolist() + \
+                          self.initial_arrangement + \
+                          self.data.macd.values.tolist() + \
+                          self.data.rsi.values.tolist()  + \
+                          self.data.cci.values.tolist()  + \
+                          self.data.adx.values.tolist() 
+            init_total_asset = self.initial_balance+ \
+            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+            self.asset_memory = [init_total_asset]
+        else:
         # initalize state
-        self.state = [INITIAL_ACCOUNT_BALANCE] + \
-                      self.data.adjcp.values.tolist() + \
-                      [0]*self.stock_dim + \
-                      self.data.macd.values.tolist() + \
-                      self.data.rsi.values.tolist() + \
-                      self.data.cci.values.tolist() + \
-                      self.data.adx.values.tolist()
+            self.state = [INITIAL_ACCOUNT_BALANCE] + \
+                        self.data.adjcp.values.tolist() + \
+                        [0]*self.stock_dim + \
+                        self.data.macd.values.tolist() + \
+                        self.data.rsi.values.tolist() + \
+                        self.data.cci.values.tolist() + \
+                        self.data.adx.values.tolist()
+            self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         # initialize reward
         self.reward = 0
         self.cost = 0
         # memorize all the total balance change
-        self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         self.rewards_memory = []
         self.trades = 0
         #self.reset()
@@ -174,21 +190,33 @@ class StockEnvTrain(gym.Env):
         return self.state, self.reward, self.terminal, {}
 
     def reset(self):
-        self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         self.day = 0
         self.data = self.df.loc[self.day,:]
         self.cost = 0
         self.trades = 0
         self.terminal = False 
         self.rewards_memory = []
+        if self.if_mvo:
+            self.state = [self.initial_balance] + \
+                          self.data.adjcp.values.tolist() + \
+                          self.initial_arrangement + \
+                          self.data.macd.values.tolist() + \
+                          self.data.rsi.values.tolist()  + \
+                          self.data.cci.values.tolist()  + \
+                          self.data.adx.values.tolist() 
+            init_total_asset = self.initial_balance+ \
+            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+            self.asset_memory = [init_total_asset]
+        else:
         #initiate state
-        self.state = [INITIAL_ACCOUNT_BALANCE] + \
-                      self.data.adjcp.values.tolist() + \
-                      [0]*self.stock_dim + \
-                      self.data.macd.values.tolist() + \
-                      self.data.rsi.values.tolist() + \
-                      self.data.cci.values.tolist() + \
-                      self.data.adx.values.tolist() 
+            self.state = [INITIAL_ACCOUNT_BALANCE] + \
+                        self.data.adjcp.values.tolist() + \
+                        [0]*self.stock_dim + \
+                        self.data.macd.values.tolist() + \
+                        self.data.rsi.values.tolist() + \
+                        self.data.cci.values.tolist() + \
+                        self.data.adx.values.tolist() 
+            self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         # iteration += 1 
         # print("Reset state shape:", np.array(self.state).shape)
         # print("Checking for NaN in reset state:", np.isnan(self.state).sum())
@@ -201,3 +229,7 @@ class StockEnvTrain(gym.Env):
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
+    
+    def seed(self, seed=None):
+        return self._seed(seed)
+
