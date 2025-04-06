@@ -20,7 +20,8 @@ class StockEnvValidation(gym.Env):
     """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, df, stock_dim, day = 0, turbulence_threshold=140, iteration=''):
+    def __init__(self, df, stock_dim, day = 0, turbulence_threshold=140, iteration='',
+                 if_mvo=False, initial_arrangement = None, initial_balance = None):
         #super(StockEnv, self).__init__()
         #money = 10 , scope = 1
         self.day = day
@@ -35,7 +36,25 @@ class StockEnvValidation(gym.Env):
         self.data = self.df.loc[self.day,:]
         self.terminal = False     
         self.turbulence_threshold = turbulence_threshold
+
+        self.if_mvo = if_mvo
+        if self.if_mvo:
+            self.initial_arrangement = initial_arrangement
+            self.initial_balance = initial_balance
+            self.state = [self.initial_balance] + \
+                          self.data.adjcp.values.tolist() + \
+                          self.initial_arrangement + \
+                          self.data.macd.values.tolist() + \
+                          self.data.rsi.values.tolist()  + \
+                          self.data.cci.values.tolist()  + \
+                          self.data.adx.values.tolist() 
+            init_total_asset = self.initial_balance+ \
+            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+            self.asset_memory = [init_total_asset]
+        else:
+
         # initalize state
+
         self.state = [INITIAL_ACCOUNT_BALANCE] + \
                       self.data.adjcp.values.tolist() + \
                       [0]*self.stock_dim + \
@@ -44,14 +63,13 @@ class StockEnvValidation(gym.Env):
                       self.data.cci.values.tolist() + \
                       self.data.adx.values.tolist() + \
                     [self.data.VIX.values[0]]
+        self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
+
         # initialize reward
         self.reward = 0
         self.turbulence = 0
         self.cost = 0
         self.trades = 0
-        self.turbulence = 0
-        self.reward = 0
-        self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         self.rewards_memory = []
         self.iteration = iteration
 
@@ -219,24 +237,33 @@ class StockEnvValidation(gym.Env):
         self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         self.rewards_memory = []
         #initiate state
-        self.state = [INITIAL_ACCOUNT_BALANCE] + \
-                      self.data.adjcp.values.tolist() + \
-                      [0]*self.stock_dim + \
-                      self.data.macd.values.tolist() + \
-                      self.data.rsi.values.tolist()  + \
-                      self.data.cci.values.tolist()  + \
-                      self.data.adx.values.tolist()  + \
-            [self.data.VIX.values[0]]
-            
+        if self.if_mvo:
+          self.state = [INITIAL_ACCOUNT_BALANCE] + \
+                        self.data.adjcp.values.tolist() + \
+                        [0]*self.stock_dim + \
+                        self.data.macd.values.tolist() + \
+                        self.data.rsi.values.tolist()  + \
+                        self.data.cci.values.tolist()  + \
+                        self.data.adx.values.tolist()  + \
+              [self.data.VIX.values[0]]
+          init_total_asset = self.initial_balance+ \
+                sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+                self.asset_memory = [init_total_asset]
+        else:
+          self.state = [INITIAL_ACCOUNT_BALANCE] + \
+                        self.data.adjcp.values.tolist() + \
+                        [0]*self.stock_dim + \
+                        self.data.macd.values.tolist() + \
+                        self.data.rsi.values.tolist()  + \
+                        self.data.cci.values.tolist()  + \
+                        self.data.adx.values.tolist()  + \
+                          [self.data.VIX.values[0]]
+          self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         return self.state
 
     def render(self, mode='human', close=False):
         return self.state
     
-    def _seed(self, seed=None):
-        self.np_random, seed = seeding.np_random(seed)
-        return [seed]
-
     def _get_dynamic_transaction_fee(self, vix):
         base_fee = 0.001
         delta = 0.0001
@@ -250,3 +277,6 @@ class StockEnvValidation(gym.Env):
         penalty = alpha_volume + alpha_trades + alpha_vix
         adjusted_reward = base_reward - penalty * abs(base_reward)
         return adjusted_reward
+
+    def seed(self, seed=None):
+        return self._seed(seed)

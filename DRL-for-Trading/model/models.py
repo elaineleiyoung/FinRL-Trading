@@ -126,6 +126,7 @@ def DRL_prediction(df,
                                                    new_balance = new_balance,
                                                    arrangement = arrangement,
                                                    if_fix = if_fix)])
+    env_trade.seed(config.SEED_TRADE)
     obs_trade = env_trade.reset()
 
     for i in range(len(df.index.unique())):
@@ -232,21 +233,14 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
         
         ############## Environment Setup starts ##############
         ## training env
-        # train = data_split(df, start=start_date, end=count_df.iloc[i - 2, 0])
-        env_train = DummyVecEnv([lambda: StockEnvTrain(train_set, stock_dim = stock_count)])
-        # train = data_split(df, start=start_date, end=unique_trade_date[i - rebalance_window - validation_window])
-        # env_train = DummyVecEnv([lambda: StockEnvTrain(train)])
-
-        ## validation env
-        # validation = data_split(df, start=count_df.iloc[i - 2, 0],
-        #                         end=count_df.iloc[i - 1, 0])
-        # val_stock_count = count_df.iloc[i - 2,1]
-        # val_day_count = count_df.iloc[i - 2,2]
-        # validation = data_split(df, start=unique_trade_date[i - rebalance_window - validation_window],
-        #                         end=unique_trade_date[i - rebalance_window])
+        env_train = DummyVecEnv([lambda: StockEnvTrain(train_set, stock_dim = stock_count, if_mvo=False,
+                                                          initial_arrangement = initial_arrangement, initial_balance = initial_balance)])
         env_val = DummyVecEnv([lambda: StockEnvValidation(val_set,stock_dim = stock_count,
                                                           turbulence_threshold=turbulence_threshold,
-                                                          iteration=i)])
+                                                          iteration=i, if_mvo=True,
+                                                          initial_arrangement = initial_arrangement, initial_balance = initial_balance)])
+        env_train.seed(config.SEED_TRAIN)
+        env_val.seed(config.SEED_VAL)
         print(f"validation shape: {val_set.shape}")
 
         obs_val = env_val.reset()
@@ -255,8 +249,6 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
         ############## Training and Validation starts ##############
         print("======Model training from: ", start_date, "to ",
               report_date[i - 2])
-        # print("training: ",len(data_split(df, start=20090000, end=test.datadate.unique()[i-rebalance_window]) ))
-        # print("==============Model Training===========")
         print("======A2C Training========")
         model_a2c = train_A2C(env_train, model_name="A2C_30k_dow_{}".format(i), timesteps=30000)
         print("======A2C Validation from: ", report_date[i - 2], "to ",
