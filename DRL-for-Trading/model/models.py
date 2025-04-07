@@ -156,7 +156,7 @@ def get_validation_sharpe(iteration):
     return sharpe
 
 
-def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_selected_df, if_fix) -> None:
+def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_selected_df, if_fix, if_vix) -> None:
     """Ensemble Strategy that combines PPO, A2C and DDPG"""
     print("============Start Ensemble Strategy============")
     # for ensemble model, it's necessary to feed the last state
@@ -166,10 +166,6 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
     last_state_ppo = []
     last_state_ddpg = []
 
-    # last_state_ensemble = pd.read_csv('results/last_state_ensemble_35.csv')['last_state'].tolist()
-    # last_state_a2c = pd.read_csv('results/last_state_a2c_35.csv')['last_state'].tolist()
-    # last_state_ppo = pd.read_csv('results/last_state_ppo_35.csv')['last_state'].tolist()
-    # last_state_ddpg = pd.read_csv('results/last_state_ddpg_35.csv')['last_state'].tolist()
     initial_arrangement = []
     initial_balance = 0
     
@@ -184,183 +180,345 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
 
     model_use = []
 
-    #insample_turbulence = df[(df.datadate<val_start_date)& (df.datadate>=start_date)]
-    #insample_turbulence = insample_turbulence.drop_duplicates(subset=['datadate'])
-    #insample_turbulence_threshold = np.quantile(insample_turbulence.turbulence.values, .90)
+
 
     start = time.time()
     # start_idx = count_df[count_df['datadate'] == val_start_date].index[0]
     start_idx = report_date.index(val_start_date)
     # prev_stock_count, prev_stock_pool, prev_train_set, prev_val_set, prev_trade_set = get_training_data(df, stock_selected_df, start_date, report_date[start_idx-1], report_date[start_idx], report_date[start_idx+1])
     # stock_pool = start_state['tic'].tolist()
-    previous_VIX_mean_vol = None
-    for i in range(start_idx + 2, len(report_date)):
-        end_date_index = df.index[df["datadate"] < report_date[i - 2]].to_list()[-1]  # end of test?
-        # start_date_index = end_date_index - report_date[i - 3]*count_df.iloc[i - 3, 1] + 1 # 30 stocks, I'll have a table for you too, maybe a dataframe?
-        start_date_index = df.index[df["datadate"] >= report_date[i - 3]].to_list()[0]
+    if if_vix:
+        previous_VIX_mean_vol = None
+        for i in range(start_idx + 2, len(report_date)):
+            end_date_index = df.index[df["datadate"] < report_date[i - 2]].to_list()[-1]  # end of test?
+            # start_date_index = end_date_index - report_date[i - 3]*count_df.iloc[i - 3, 1] + 1 # 30 stocks, I'll have a table for you too, maybe a dataframe?
+            start_date_index = df.index[df["datadate"] >= report_date[i - 3]].to_list()[0]
 
-        one_window_ago = report_date[i - 2] - pd.DateOffset(months=18)
-        one_window_index = df.index[df["datadate"] >= one_window_ago].to_list()[0]
+            one_window_ago = report_date[i - 2] - pd.DateOffset(months=18)
+            one_window_index = df.index[df["datadate"] >= one_window_ago].to_list()[0]
 
-        historical_VIX_vol = df.iloc[one_window_index:(end_date_index + 1), :]
-        historical_VIX_vol = historical_VIX_vol.drop_duplicates(subset=['datadate'])
-        historical_VIX_mean_vol = np.mean(historical_VIX_vol.VIX_volatility_30d.dropna().values)
+            historical_VIX_vol = df.iloc[one_window_index:(end_date_index + 1), :]
+            historical_VIX_vol = historical_VIX_vol.drop_duplicates(subset=['datadate'])
+            historical_VIX_mean_vol = np.mean(historical_VIX_vol.turbulence.dropna().values)
 
-        if previous_VIX_mean_vol is not None:
-            if historical_VIX_mean_vol > previous_VIX_mean_vol:
-                # If VIX is increasing, use a higher quantile from historical data
-                VIX_threshold_vol = np.quantile(historical_VIX_vol.VIX_volatility_30d.dropna().values, 0.90)
+            if previous_VIX_mean_vol is not None:
+                if historical_VIX_mean_vol > previous_VIX_mean_vol:
+                    # If VIX is increasing, use a higher quantile from historical data
+                    turbulence_threshold = np.quantile(historical_VIX_vol.turbulence.dropna().values, 0.90)
+                else:
+                    # If VIX is stable or decreasing, use a more conservative threshold
+                    turbulence_threshold = np.quantile(historical_VIX_vol.turbulence.dropna().values, 1)
             else:
-                # If VIX is stable or decreasing, use a more conservative threshold
-                VIX_threshold_vol = np.quantile(historical_VIX_vol.VIX_volatility_30d.dropna().values, 1)
-        else:
-            # Initial threshold setting based on first available period
-            VIX_threshold_vol = np.quantile(historical_VIX_vol.VIX_volatility_30d.dropna().values, 0.90)
-        previous_VIX_vol = df.iloc[start_date_index:(end_date_index + 1), :]
-        previous_VIX_vol = previous_VIX_vol.drop_duplicates(subset=['datadate'])
-        previous_VIX_mean_vol = np.mean(previous_VIX_vol.VIX_volatility_30d.dropna().values)
+                # Initial threshold setting based on first available period
+                turbulence_threshold = np.quantile(historical_VIX_vol.turbulence.dropna().values, 0.90)
+            previous_VIX_vol = df.iloc[start_date_index:(end_date_index + 1), :]
+            previous_VIX_vol = previous_VIX_vol.drop_duplicates(subset=['datadate'])
+            previous_VIX_mean_vol = np.mean(previous_VIX_vol.turbulence.dropna().values)
+            print("turbulence_threshold: ", turbulence_threshold)
+            stock_count, stock_pool, train_set, val_set, trade_set = get_training_data(df, stock_selected_df,
+                                                                                       start_date, report_date[i - 2],
+                                                                                       report_date[i - 1],
+                                                                                       report_date[i], if_fix)
 
-        print("VIX_threshold_vol: ", VIX_threshold_vol)
-        stock_count, stock_pool, train_set, val_set, trade_set = get_training_data(df, stock_selected_df, start_date, report_date[i - 2], report_date[i - 1], report_date[i], if_fix)
+            # if i == 26:
+            if i == start_idx + 2:
+                initial = True
+                start_state, initial_balance = calculate_mean_variance(start_date, report_date[start_idx + 1],
+                                                                       stock_pool)
+                initial_arrangement = start_state['num_shares'].tolist()
+                prev_stock_pool = stock_pool.copy()
+            else:
+                initial = False
+                # new_stock_pool = stock_pool
+                new_balance_ensemble, arrangement_ensemble = update_portfolio(prev_stock_pool, stock_pool,
+                                                                              last_state_ensemble)
+                new_balance_a2c, arrangement_a2c = update_portfolio(prev_stock_pool, stock_pool, last_state_a2c)
+                new_balance_ppo, arrangement_ppo = update_portfolio(prev_stock_pool, stock_pool, last_state_ppo)
+                new_balance_ddpg, arrangement_ddpg = update_portfolio(prev_stock_pool, stock_pool, last_state_ddpg)
+                prev_stock_pool = stock_pool.copy()
+            ############## Environment Setup starts ##############
+            ## training env
+            env_train = DummyVecEnv([lambda: StockEnvTrain(train_set, stock_dim=stock_count, if_mvo=False,
+                                                           initial_arrangement=initial_arrangement,
+                                                           initial_balance=initial_balance)])
+            env_val = DummyVecEnv([lambda: StockEnvValidation(val_set, stock_dim=stock_count,
+                                                              turbulence_threshold=turbulence_threshold,
+                                                              iteration=i, if_mvo=True,
+                                                              initial_arrangement=initial_arrangement,
+                                                              initial_balance=initial_balance)])
+            env_train.seed(config.SEED_TRAIN)
+            env_val.seed(config.SEED_VAL)
+            print(f"validation shape: {val_set.shape}")
+
+            obs_val = env_val.reset()
+            ############## Environment Setup ends ##############
+
+            ############## Training and Validation starts ##############
+            print("======Model training from: ", start_date, "to ",
+                  report_date[i - 2])
+            print("======A2C Training========")
+            model_a2c = train_A2C(env_train, model_name="A2C_30k_dow_{}".format(i), timesteps=30000)
+            print("======A2C Validation from: ", report_date[i - 2], "to ",
+                  report_date[i - 1])
+            DRL_validation(model=model_a2c, test_data=val_set, test_env=env_val, test_obs=obs_val)
+            sharpe_a2c = get_validation_sharpe(i)
+            print("A2C Sharpe Ratio: ", sharpe_a2c)
+
+            print("======PPO Training========")
+            model_ppo = train_PPO(env_train, model_name="PPO_100k_dow_{}".format(i), timesteps=100000)
+            print("======PPO Validation from: ", report_date[i - 2], "to ",
+                  report_date[i - 1])
+            DRL_validation(model=model_ppo, test_data=val_set, test_env=env_val, test_obs=obs_val)
+            sharpe_ppo = get_validation_sharpe(i)
+            print("PPO Sharpe Ratio: ", sharpe_ppo)
+
+            print("======DDPG Training========")
+            # gc.collect()
+            model_ddpg = train_DDPG(env_train, model_name="DDPG_10k_dow_{}".format(i), timesteps=10000)
+            # model_ddpg = train_TD3(env_train, model_name="DDPG_10k_dow_{}".format(i), timesteps=20000)
+            print("======DDPG Validation from: ", report_date[i - 2], "to ",
+                  report_date[i - 1])
+            DRL_validation(model=model_ddpg, test_data=val_set, test_env=env_val, test_obs=obs_val)
+            sharpe_ddpg = get_validation_sharpe(i)
+
+            ppo_sharpe_list.append(sharpe_ppo)
+            a2c_sharpe_list.append(sharpe_a2c)
+            ddpg_sharpe_list.append(sharpe_ddpg)
+
+            # Model Selection based on sharpe ratio
+            if (sharpe_ppo >= sharpe_a2c) & (sharpe_ppo >= sharpe_ddpg):
+                model_ensemble = model_ppo
+                model_use.append('PPO')
+            elif (sharpe_a2c > sharpe_ppo) & (sharpe_a2c > sharpe_ddpg):
+                model_ensemble = model_a2c
+                model_use.append('A2C')
+            else:
+                model_ensemble = model_ddpg
+                model_use.append('DDPG')
+            ############## Training and Validation ends ##############
+
+            ############## Trading starts ##############
+            print("======Trading from: ", report_date[i - 1], "to ", report_date[i])
+            # print("Used Model: ", model_ensemble)
+            last_state_ensemble = DRL_prediction(df=trade_set, model=model_ensemble, name="ensemble",
+                                                 last_state=last_state_ensemble, iter_num=i,
+                                                 turbulence_threshold=turbulence_threshold,
+                                                 initial=initial, stock_dim=stock_count,
+                                                 initial_arrangement=initial_arrangement,
+                                                 initial_balance=initial_balance,
+                                                 new_balance=new_balance_ensemble,
+                                                 arrangement=arrangement_ensemble,
+                                                 if_fix=if_fix)
+            # print("============Trading Done============")
+
+            last_state_a2c = DRL_prediction(
+                trade_set,
+                model_a2c,
+                "a2c",
+                last_state_a2c,
+                i,
+                turbulence_threshold,
+                initial,
+                stock_count,
+                initial_arrangement,
+                initial_balance,
+                new_balance_a2c,
+                arrangement_a2c,
+                if_fix
+            )
+            last_state_ppo = DRL_prediction(
+                trade_set,
+                model_ppo,
+                "ppo",
+                last_state_ppo,
+                i,
+                turbulence_threshold,
+                initial,
+                stock_count,
+                initial_arrangement,
+                initial_balance,
+                new_balance_ppo,
+                arrangement_ppo,
+                if_fix
+            )
+            last_state_ddpg = DRL_prediction(
+                trade_set,
+                model_ddpg,
+                "ddpg",
+                last_state_ddpg,
+                i,
+                turbulence_threshold,
+                initial,
+                stock_count,
+                initial_arrangement,
+                initial_balance,
+                new_balance_ddpg,
+                arrangement_ddpg,
+                if_fix
+            )
+            del model_a2c, model_ppo, model_ddpg, model_ensemble
+            del env_train, env_val
+            del train_set, val_set, trade_set
+            gc.collect()
+
+    else:
+        insample_turbulence = df[(df.datadate<val_start_date)& (df.datadate>=start_date)]
+        insample_turbulence = insample_turbulence.drop_duplicates(subset=['datadate'])
+        insample_turbulence_threshold = np.quantile(insample_turbulence.turbulence.values, .90)
+        for i in range(start_idx + 2, len(report_date)):
+            end_date_index = df.index[df["datadate"] < report_date[i - 2]].to_list()[-1] #end of test?
+            # start_date_index = end_date_index - report_date[i - 3]*count_df.iloc[i - 3, 1] + 1 # 30 stocks, I'll have a table for you too, maybe a dataframe?
+            start_date_index = df.index[df["datadate"] >= report_date[i - 3]].to_list()[0]
+            historical_turbulence = df.iloc[start_date_index:(end_date_index + 1), :]
+
+            historical_turbulence = historical_turbulence.drop_duplicates(subset=['datadate'])
+            historical_turbulence_mean = np.mean(historical_turbulence.turbulence.dropna().values)
+
+            if historical_turbulence_mean > insample_turbulence_threshold:
+                turbulence_threshold = insample_turbulence_threshold
+            else:
+                turbulence_threshold = np.quantile(insample_turbulence.turbulence.dropna().values, 1)
+            print("turbulence_threshold: ", turbulence_threshold)
+            stock_count, stock_pool, train_set, val_set, trade_set = get_training_data(df, stock_selected_df, start_date, report_date[i - 2], report_date[i - 1], report_date[i], if_fix)
         
-        # if i == 26:
-        if i == start_idx + 2:
-            initial = True
-            start_state, initial_balance= calculate_mean_variance(start_date, report_date[start_idx + 1], stock_pool)
-            initial_arrangement = start_state['num_shares'].tolist()
-            prev_stock_pool =  stock_pool.copy()
-        else:
-            initial = False
-            # new_stock_pool = stock_pool
-            new_balance_ensemble, arrangement_ensemble = update_portfolio(prev_stock_pool, stock_pool, last_state_ensemble)
-            new_balance_a2c, arrangement_a2c = update_portfolio(prev_stock_pool, stock_pool, last_state_a2c)
-            new_balance_ppo, arrangement_ppo = update_portfolio(prev_stock_pool, stock_pool, last_state_ppo)
-            new_balance_ddpg, arrangement_ddpg = update_portfolio(prev_stock_pool, stock_pool, last_state_ddpg)
-            prev_stock_pool = stock_pool.copy()
+            # if i == 26:
+            if i == start_idx + 2:
+                initial = True
+                start_state, initial_balance= calculate_mean_variance(start_date, report_date[start_idx + 1], stock_pool)
+                initial_arrangement = start_state['num_shares'].tolist()
+                prev_stock_pool =  stock_pool.copy()
+            else:
+                initial = False
+                # new_stock_pool = stock_pool
+                new_balance_ensemble, arrangement_ensemble = update_portfolio(prev_stock_pool, stock_pool, last_state_ensemble)
+                new_balance_a2c, arrangement_a2c = update_portfolio(prev_stock_pool, stock_pool, last_state_a2c)
+                new_balance_ppo, arrangement_ppo = update_portfolio(prev_stock_pool, stock_pool, last_state_ppo)
+                new_balance_ddpg, arrangement_ddpg = update_portfolio(prev_stock_pool, stock_pool, last_state_ddpg)
+                prev_stock_pool = stock_pool.copy()
 
         
-        ############## Environment Setup starts ##############
-        ## training env
-        env_train = DummyVecEnv([lambda: StockEnvTrain(train_set, stock_dim = stock_count, if_mvo=False,
-                                                          initial_arrangement = initial_arrangement, initial_balance = initial_balance)])
-        env_val = DummyVecEnv([lambda: StockEnvValidation(val_set,stock_dim = stock_count,
-                                                          turbulence_threshold=VIX_threshold_vol,
-                                                          iteration=i, if_mvo=True,
-                                                          initial_arrangement = initial_arrangement, initial_balance = initial_balance)])
-        env_train.seed(config.SEED_TRAIN)
-        env_val.seed(config.SEED_VAL)
-        print(f"validation shape: {val_set.shape}")
+            ############## Environment Setup starts ##############
+            ## training env
+            env_train = DummyVecEnv([lambda: StockEnvTrain(train_set, stock_dim = stock_count, if_mvo=False,
+                                                              initial_arrangement = initial_arrangement, initial_balance = initial_balance)])
+            env_val = DummyVecEnv([lambda: StockEnvValidation(val_set,stock_dim = stock_count,
+                                                              turbulence_threshold=turbulence_threshold,
+                                                              iteration=i, if_mvo=True,
+                                                              initial_arrangement = initial_arrangement, initial_balance = initial_balance)])
+            env_train.seed(config.SEED_TRAIN)
+            env_val.seed(config.SEED_VAL)
+            print(f"validation shape: {val_set.shape}")
 
-        obs_val = env_val.reset()
-        ############## Environment Setup ends ##############
+            obs_val = env_val.reset()
+            ############## Environment Setup ends ##############
 
-        ############## Training and Validation starts ##############
-        print("======Model training from: ", start_date, "to ",
-              report_date[i - 2])
-        print("======A2C Training========")
-        model_a2c = train_A2C(env_train, model_name="A2C_30k_dow_{}".format(i), timesteps=30000)
-        print("======A2C Validation from: ", report_date[i - 2], "to ",
-              report_date[i - 1])
-        DRL_validation(model=model_a2c, test_data=val_set, test_env=env_val, test_obs=obs_val)
-        sharpe_a2c = get_validation_sharpe(i)
-        print("A2C Sharpe Ratio: ", sharpe_a2c)
+            ############## Training and Validation starts ##############
+            print("======Model training from: ", start_date, "to ",
+                  report_date[i - 2])
+            print("======A2C Training========")
+            model_a2c = train_A2C(env_train, model_name="A2C_30k_dow_{}".format(i), timesteps=30000)
+            print("======A2C Validation from: ", report_date[i - 2], "to ",
+                  report_date[i - 1])
+            DRL_validation(model=model_a2c, test_data=val_set, test_env=env_val, test_obs=obs_val)
+            sharpe_a2c = get_validation_sharpe(i)
+            print("A2C Sharpe Ratio: ", sharpe_a2c)
 
-        print("======PPO Training========")
-        model_ppo = train_PPO(env_train, model_name="PPO_100k_dow_{}".format(i), timesteps=100000)
-        print("======PPO Validation from: ", report_date[i - 2], "to ",
-              report_date[i - 1])
-        DRL_validation(model=model_ppo, test_data=val_set, test_env=env_val, test_obs=obs_val)
-        sharpe_ppo = get_validation_sharpe(i)
-        print("PPO Sharpe Ratio: ", sharpe_ppo)
+            print("======PPO Training========")
+            model_ppo = train_PPO(env_train, model_name="PPO_100k_dow_{}".format(i), timesteps=100000)
+            print("======PPO Validation from: ", report_date[i - 2], "to ",
+                  report_date[i - 1])
+            DRL_validation(model=model_ppo, test_data=val_set, test_env=env_val, test_obs=obs_val)
+            sharpe_ppo = get_validation_sharpe(i)
+            print("PPO Sharpe Ratio: ", sharpe_ppo)
 
-        print("======DDPG Training========")
-        # gc.collect()
-        model_ddpg = train_DDPG(env_train, model_name="DDPG_10k_dow_{}".format(i), timesteps=10000)
-        #model_ddpg = train_TD3(env_train, model_name="DDPG_10k_dow_{}".format(i), timesteps=20000)
-        print("======DDPG Validation from: ", report_date[i - 2], "to ",
-              report_date[i - 1])
-        DRL_validation(model=model_ddpg, test_data=val_set, test_env=env_val, test_obs=obs_val)
-        sharpe_ddpg = get_validation_sharpe(i)
+            print("======DDPG Training========")
+            # gc.collect()
+            model_ddpg = train_DDPG(env_train, model_name="DDPG_10k_dow_{}".format(i), timesteps=10000)
+            #model_ddpg = train_TD3(env_train, model_name="DDPG_10k_dow_{}".format(i), timesteps=20000)
+            print("======DDPG Validation from: ", report_date[i - 2], "to ",
+                  report_date[i - 1])
+            DRL_validation(model=model_ddpg, test_data=val_set, test_env=env_val, test_obs=obs_val)
+            sharpe_ddpg = get_validation_sharpe(i)
 
-        ppo_sharpe_list.append(sharpe_ppo)
-        a2c_sharpe_list.append(sharpe_a2c)
-        ddpg_sharpe_list.append(sharpe_ddpg)
+            ppo_sharpe_list.append(sharpe_ppo)
+            a2c_sharpe_list.append(sharpe_a2c)
+            ddpg_sharpe_list.append(sharpe_ddpg)
 
-        # Model Selection based on sharpe ratio
-        if (sharpe_ppo >= sharpe_a2c) & (sharpe_ppo >= sharpe_ddpg):
-            model_ensemble = model_ppo
-            model_use.append('PPO')
-        elif (sharpe_a2c > sharpe_ppo) & (sharpe_a2c > sharpe_ddpg):
-            model_ensemble = model_a2c
-            model_use.append('A2C')
-        else:
-            model_ensemble = model_ddpg
-            model_use.append('DDPG')
-        ############## Training and Validation ends ##############
+            # Model Selection based on sharpe ratio
+            if (sharpe_ppo >= sharpe_a2c) & (sharpe_ppo >= sharpe_ddpg):
+                model_ensemble = model_ppo
+                model_use.append('PPO')
+            elif (sharpe_a2c > sharpe_ppo) & (sharpe_a2c > sharpe_ddpg):
+                model_ensemble = model_a2c
+                model_use.append('A2C')
+            else:
+                model_ensemble = model_ddpg
+                model_use.append('DDPG')
+            ############## Training and Validation ends ##############
 
-        ############## Trading starts ##############
-        print("======Trading from: ", report_date[i - 1], "to ", report_date[i])
-        #print("Used Model: ", model_ensemble)
-        last_state_ensemble = DRL_prediction(df=trade_set, model=model_ensemble, name="ensemble",
-                                             last_state=last_state_ensemble, iter_num=i,
-                                             turbulence_threshold=VIX_threshold_vol,
-                                             initial=initial, stock_dim = stock_count,
-                                             initial_arrangement = initial_arrangement,
-                                             initial_balance = initial_balance,
-                                             new_balance = new_balance_ensemble,
-                                             arrangement = arrangement_ensemble,
-                                             if_fix = if_fix)
-        # print("============Trading Done============")
+            ############## Trading starts ##############
+            print("======Trading from: ", report_date[i - 1], "to ", report_date[i])
+            #print("Used Model: ", model_ensemble)
+            last_state_ensemble = DRL_prediction(df=trade_set, model=model_ensemble, name="ensemble",
+                                                 last_state=last_state_ensemble, iter_num=i,
+                                                 turbulence_threshold=turbulence_threshold,
+                                                 initial=initial, stock_dim = stock_count,
+                                                 initial_arrangement = initial_arrangement,
+                                                 initial_balance = initial_balance,
+                                                 new_balance = new_balance_ensemble,
+                                                 arrangement = arrangement_ensemble,
+                                                 if_fix = if_fix)
+            # print("============Trading Done============")
 
-        last_state_a2c = DRL_prediction(
-            trade_set,
-            model_a2c,
-            "a2c",
-            last_state_a2c,
-            i,
-            VIX_threshold_vol,
-            initial,
-            stock_count,
-            initial_arrangement,
-            initial_balance,
-            new_balance_a2c,
-            arrangement_a2c,
-            if_fix
-        )
-        last_state_ppo = DRL_prediction(
-            trade_set,
-            model_ppo,
-            "ppo",
-            last_state_ppo,
-            i,
-            VIX_threshold_vol,
-            initial,
-            stock_count,
-            initial_arrangement,
-            initial_balance,
-            new_balance_ppo,
-            arrangement_ppo,
-            if_fix
-        )
-        last_state_ddpg = DRL_prediction(
-            trade_set,
-            model_ddpg,
-            "ddpg",
-            last_state_ddpg,
-            i,
-            VIX_threshold_vol,
-            initial,
-            stock_count,
-            initial_arrangement,
-            initial_balance,
-            new_balance_ddpg,
-            arrangement_ddpg,
-            if_fix
-        )
-        del model_a2c, model_ppo, model_ddpg, model_ensemble
-        del env_train, env_val
-        del train_set, val_set, trade_set
-        gc.collect()
+            last_state_a2c = DRL_prediction(
+                trade_set,
+                model_a2c,
+                "a2c",
+                last_state_a2c,
+                i,
+                turbulence_threshold,
+                initial,
+                stock_count,
+                initial_arrangement,
+                initial_balance,
+                new_balance_a2c,
+                arrangement_a2c,
+                if_fix
+            )
+            last_state_ppo = DRL_prediction(
+                trade_set,
+                model_ppo,
+                "ppo",
+                last_state_ppo,
+                i,
+                turbulence_threshold,
+                initial,
+                stock_count,
+                initial_arrangement,
+                initial_balance,
+                new_balance_ppo,
+                arrangement_ppo,
+                if_fix
+            )
+            last_state_ddpg = DRL_prediction(
+                trade_set,
+                model_ddpg,
+                "ddpg",
+                last_state_ddpg,
+                i,
+                turbulence_threshold,
+                initial,
+                stock_count,
+                initial_arrangement,
+                initial_balance,
+                new_balance_ddpg,
+                arrangement_ddpg,
+                if_fix
+            )
+            del model_a2c, model_ppo, model_ddpg, model_ensemble
+            del env_train, env_val
+            del train_set, val_set, trade_set
+            gc.collect()
 
     pd.DataFrame(ppo_sharpe_list).to_csv(config.RESULTS_DIR + '/ppo_sharpe_list.csv')
     pd.DataFrame(a2c_sharpe_list).to_csv(config.RESULTS_DIR + '/a2c_sharpe_list.csv')

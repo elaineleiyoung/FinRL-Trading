@@ -20,11 +20,14 @@ def run_model() -> None:
     stock_selected_df = get_selected_stock(start_date)
     report_date = stock_selected_df.datadate.unique().tolist()
 
-    preprocessed_path = 'done_data_fix.csv' #_turbulance_full
+
+    preprocessed_path = 'DRL-for-Trading\done_data_fix.csv' #_turbulance_full
+
     if os.path.exists(preprocessed_path):
         data = pd.read_csv(preprocessed_path, index_col=0)
         data["datadate"] = pd.to_datetime(data["datadate"])
     else:
+
         data = preprocess_data(if_fix = True, if_vix = True, selected_stocks = True,
                                stock_selected_df = stock_selected_df,
                                start_date = start_date)
