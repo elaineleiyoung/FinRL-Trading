@@ -56,7 +56,8 @@ def run_model() -> None:
                           start_date = start_date,
                           val_start_date = val_start_date,
                           stock_selected_df = stock_selected_df,
-                          if_fix = True)
+                          if_fix = True,
+                          if_vix = True)
 
     #_logger.info(f"saving model version: {_version}")
 
