@@ -109,13 +109,18 @@ def add_vix_data(df, vix_data):
     df = df.merge(vix_data, on='datadate', how='left')
     df['VIX'] = df['VIX'].ffill()  # Forward-fill missing VIX values
     return df
+def add_vix_return_volatility(vix_data: pd.DataFrame, window: int = 30):
+    vix_data = vix_data.sort_values('datadate').reset_index(drop=True)
+    vix_data['VIX_Return'] = vix_data['VIX'].pct_change()
+    vix_data[f'VIX_volatility_{window}d'] = vix_data['VIX_Return'].rolling(window=window).std().fillna(0) * np.sqrt(252)
+    return vix_data
 
 def get_price_data(start_date):
-    price_df = pd.read_csv('data_processor_update/sp500_price_199601_202502.csv')
+    price_df = pd.read_csv('data/sp500_price_199601_202502.csv')
     price_df.rename(columns={'date':'datadate','adj_close_q':'adjcp','openprc':'open',
                                 'askhi':'high','bidlo':'low','vol':'volume'}, inplace=True)
     price_df = price_df[['datadate', 'tic', 'adjcp', 'open', 'high', 'low', 'volume']]
-    fundamental_df = pd.read_csv('data_processor_update/sp500_fundamental_199601_202502.csv')
+    fundamental_df = pd.read_csv('data/sp500_fundamental_199601_202502.csv')
     fundamental_df.drop_duplicates(subset=['gvkey'], inplace=True)
     fundamental_df = fundamental_df[['gvkey','tic']]
     price_df = pd.merge(price_df, fundamental_df, on = 'tic')
@@ -126,7 +131,7 @@ def get_price_data(start_date):
     return price_df
 
 def get_selected_stock(date, if_single = False):
-    df = pd.read_csv('stock_selected.csv')
+    df = pd.read_csv('data/stock_selected.csv')
     df.rename(columns={'gvkey':'tic','trade_date':'datadate'}, inplace=True)
     df = df[['tic','datadate']]
     df = df.sort_values(['datadate','tic'], ignore_index=True)
@@ -175,8 +180,10 @@ def preprocess_data(if_fix = False, if_vix = False, selected_stocks = False, sto
     # df_preprocess = pd.read_csv('pre_with_ti.csv', index_col=0)
     # df_preprocess['datadate'] = pd.to_datetime(df_preprocess['datadate'], format="%Y-%m-%d")
     if if_vix:
-        vix_data = load_vix_data("DRL-for-Trading\data\VIXCLS.csv")
+        vix_data = load_vix_data("data\VIXCLS.csv")
+        vix_data = add_vix_return_volatility(vix_data, 30)
         df_preprocess = add_vix_data(df_preprocess, vix_data)
+
     else:
         df_preprocess = add_turbulence(df_preprocess, if_fix)
     # fill the missing values at the beginning

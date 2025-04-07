@@ -19,8 +19,6 @@ STOCK_DIM = 30
 # transaction fee: 1/1000 reasonable percentage
 TRANSACTION_FEE_PERCENT = 0.001
 
-# turbulence index: 90-150 reasonable threshold
-#TURBULENCE_THRESHOLD = 140
 REWARD_SCALING = 1e-4
 
 class StockEnvValidation(gym.Env):
@@ -189,8 +187,9 @@ class StockEnvValidation(gym.Env):
                 self._buy_stock(index, actions[index])
 
             self.day += 1
-            self.data = self.df.loc[self.day,:]         
+            self.data = self.df.loc[self.day,:]
             self.turbulence = self.data['turbulence'].values[0]
+
             #print(self.turbulence)
             #load next state
             # print("stock_shares:{}".format(self.state[29:]))
