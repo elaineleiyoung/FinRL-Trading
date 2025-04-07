@@ -112,7 +112,7 @@ def add_vix_data(df, vix_data):
 def add_vix_return_volatility(vix_data: pd.DataFrame, window: int = 30):
     vix_data = vix_data.sort_values('datadate').reset_index(drop=True)
     vix_data['VIX_Return'] = vix_data['VIX'].pct_change()
-    vix_data[f'VIX_volatility_{window}d'] = vix_data['VIX_Return'].rolling(window=window).std().fillna(0) * np.sqrt(252)
+    vix_data[f'turbulence'] = vix_data['VIX_Return'].rolling(window=window).std().fillna(0) * np.sqrt(252)
     return vix_data
 
 def get_price_data(start_date):
