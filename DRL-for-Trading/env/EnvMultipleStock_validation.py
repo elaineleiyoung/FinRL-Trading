@@ -7,6 +7,7 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import pickle
+from config import config
 
 # shares normalization factor
 # 100 shares per trade
@@ -18,15 +19,14 @@ STOCK_DIM = 30
 # transaction fee: 1/1000 reasonable percentage
 TRANSACTION_FEE_PERCENT = 0.001
 
-# turbulence index: 90-150 reasonable threshold
-#TURBULENCE_THRESHOLD = 140
 REWARD_SCALING = 1e-4
 
 class StockEnvValidation(gym.Env):
     """A stock trading environment for OpenAI gym"""
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, df, stock_dim, day = 0, turbulence_threshold=140, iteration=''):
+    def __init__(self, df, stock_dim, day = 0, turbulence_threshold=140, iteration='',
+                 if_mvo=False, initial_arrangement = None, initial_balance = None):
         #super(StockEnv, self).__init__()
         #money = 10 , scope = 1
         self.day = day
@@ -41,21 +41,38 @@ class StockEnvValidation(gym.Env):
         self.data = self.df.loc[self.day,:]
         self.terminal = False     
         self.turbulence_threshold = turbulence_threshold
+
+        self.if_mvo = if_mvo
+        if self.if_mvo:
+            self.initial_arrangement = initial_arrangement
+            self.initial_balance = initial_balance
+            self.state = [self.initial_balance] + \
+                          self.data.adjcp.values.tolist() + \
+                          self.initial_arrangement + \
+                          self.data.macd.values.tolist() + \
+                          self.data.rsi.values.tolist()  + \
+                          self.data.cci.values.tolist()  + \
+                          self.data.adx.values.tolist() 
+            init_total_asset = self.initial_balance+ \
+            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+            self.asset_memory = [init_total_asset]
+        else:
+
         # initalize state
-        self.state = [INITIAL_ACCOUNT_BALANCE] + \
-                      self.data.adjcp.values.tolist() + \
-                      [0]*self.stock_dim + \
-                      self.data.macd.values.tolist() + \
-                      self.data.rsi.values.tolist() + \
-                      self.data.cci.values.tolist() + \
-                      self.data.adx.values.tolist()
+            self.state = [INITIAL_ACCOUNT_BALANCE] + \
+                        self.data.adjcp.values.tolist() + \
+                        [0]*self.stock_dim + \
+                        self.data.macd.values.tolist() + \
+                        self.data.rsi.values.tolist() + \
+                        self.data.cci.values.tolist() + \
+                        self.data.adx.values.tolist()
+            self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         # initialize reward
         self.reward = 0
         self.turbulence = 0
         self.cost = 0
         self.trades = 0
         # memorize all the total balance change
-        self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         self.rewards_memory = []
         #self.reset()
         self._seed()
@@ -117,10 +134,10 @@ class StockEnvValidation(gym.Env):
 
         if self.terminal:
             plt.plot(self.asset_memory,'r')
-            plt.savefig('DRL-for-Trading/results/account_value_validation_{}.png'.format(self.iteration))
+            plt.savefig(config.RESULTS_DIR + '/account_value_validation_{}.png'.format(self.iteration))
             plt.close()
             df_total_value = pd.DataFrame(self.asset_memory)
-            df_total_value.to_csv('DRL-for-Trading/results/account_value_validation_{}.csv'.format(self.iteration))
+            df_total_value.to_csv(config.RESULTS_DIR + '/account_value_validation_{}.csv'.format(self.iteration))
             end_total_asset = self.state[0]+ \
             sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             #print("previous_total_asset:{}".format(self.asset_memory[0]))           
@@ -171,7 +188,7 @@ class StockEnvValidation(gym.Env):
 
             self.day += 1
             self.data = self.df.loc[self.day,:]         
-            self.turbulence = self.data['VIX'].values[0]
+            self.turbulence = self.data['VIX_volatility_30d'].values[0]
             #print(self.turbulence)
             #load next state
             # print("stock_shares:{}".format(self.state[29:]))
@@ -197,7 +214,6 @@ class StockEnvValidation(gym.Env):
         return self.state, self.reward, self.terminal, {}
 
     def reset(self):  
-        self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         self.day = 0
         self.data = self.df.loc[self.day,:]
         self.turbulence = 0
@@ -207,14 +223,26 @@ class StockEnvValidation(gym.Env):
         #self.iteration=self.iteration
         self.rewards_memory = []
         #initiate state
-        self.state = [INITIAL_ACCOUNT_BALANCE] + \
-                      self.data.adjcp.values.tolist() + \
-                      [0]*self.stock_dim + \
-                      self.data.macd.values.tolist() + \
-                      self.data.rsi.values.tolist()  + \
-                      self.data.cci.values.tolist()  + \
-                      self.data.adx.values.tolist() 
-            
+        if self.if_mvo:
+            self.state = [self.initial_balance] + \
+                          self.data.adjcp.values.tolist() + \
+                          self.initial_arrangement + \
+                          self.data.macd.values.tolist() + \
+                          self.data.rsi.values.tolist()  + \
+                          self.data.cci.values.tolist()  + \
+                          self.data.adx.values.tolist() 
+            init_total_asset = self.initial_balance+ \
+            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+            self.asset_memory = [init_total_asset]
+        else:
+            self.state = [INITIAL_ACCOUNT_BALANCE] + \
+                        self.data.adjcp.values.tolist() + \
+                        [0]*self.stock_dim + \
+                        self.data.macd.values.tolist() + \
+                        self.data.rsi.values.tolist()  + \
+                        self.data.cci.values.tolist()  + \
+                        self.data.adx.values.tolist() 
+            self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         return self.state
     
     def render(self, mode='human',close=False):
@@ -224,3 +252,6 @@ class StockEnvValidation(gym.Env):
     def _seed(self, seed=None):
         self.np_random, seed = seeding.np_random(seed)
         return [seed]
+
+    def seed(self, seed=None):
+        return self._seed(seed)

@@ -9,23 +9,23 @@ from preprocessing.preprocessors import *
 # config
 from config.config import *
 # model
-from model.models_0318 import *
+from model.models import *
 import os
 
 def run_model() -> None:
     """Train the model."""
-    start_date = pd.to_datetime('2012-09-04', format='%Y-%m-%d')
+    start_date = pd.to_datetime('2012-09-04', format='%Y-%m-%d') #2009-01-02
     val_start_date = pd.to_datetime('2018-09-04', format='%Y-%m-%d') #
-    trade_start_date = pd.to_datetime('2018-12-03', format='%Y-%m-%d')
+    # trade_start_date = pd.to_datetime('2018-12-03', format='%Y-%m-%d')
     stock_selected_df = get_selected_stock(start_date)
     report_date = stock_selected_df.datadate.unique().tolist()
 
-    preprocessed_path = 'DRL-for-Trading\done_data_0318.csv'
+    preprocessed_path = 'done_data_fix.csv' #_turbulance_full
     if os.path.exists(preprocessed_path):
         data = pd.read_csv(preprocessed_path, index_col=0)
         data["datadate"] = pd.to_datetime(data["datadate"])
     else:
-        data = preprocess_data(if_vix = True, selected_stocks = True,
+        data = preprocess_data(if_fix = True, if_vix = True, selected_stocks = True,
                                stock_selected_df = stock_selected_df,
                                start_date = start_date)
         data.to_csv(preprocessed_path)
@@ -33,7 +33,7 @@ def run_model() -> None:
     print(data.head())
     print(data.size)
 
-    # count_path = "DRL-for-Trading\preprocessing\count.csv"
+    # count_path = "preprocessing\count.csv"
     # count_df = pd.read_csv(count_path, index_col=0)
     # # start_date = count_df.iloc[0, 0]
     # end_date = data.iloc[-1, 0]
@@ -52,7 +52,8 @@ def run_model() -> None:
                           report_date = report_date,
                           start_date = start_date,
                           val_start_date = val_start_date,
-                          stock_selected_df = stock_selected_df)
+                          stock_selected_df = stock_selected_df,
+                          if_fix = True)
 
     #_logger.info(f"saving model version: {_version}")
 
