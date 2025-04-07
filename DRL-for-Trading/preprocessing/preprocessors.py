@@ -201,10 +201,9 @@ def preprocess_data(if_fix = False, if_vix = False, selected_stocks = False, sto
     # df_preprocess.to_csv('pre_with_ti.csv')
     # df_preprocess = pd.read_csv('pre_with_ti.csv', index_col=0)
     # df_preprocess['datadate'] = pd.to_datetime(df_preprocess['datadate'], format="%Y-%m-%d")
-    if if_vix:
-        vix_data = load_vix_data("data/VIXCLS.csv")
-        df_preprocess = add_vix_data(df_preprocess, vix_data)
-    else:
+    vix_data = load_vix_data("data/VIXCLS.csv")
+    df_preprocess = add_vix_data(df_preprocess, vix_data)
+    if not if_vix:
         df_preprocess = add_turbulence(df_preprocess, if_fix)
     # fill the missing values at the beginning
     df_preprocess.fillna(method='bfill',inplace=True)

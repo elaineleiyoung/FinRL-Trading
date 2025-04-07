@@ -95,31 +95,22 @@ class StockEnvTrade(gym.Env):
             transaction_fee = self._get_dynamic_transaction_fee(vix)
         else:
             transaction_fee = 0.001
+        current_shares = self.state[index + self.stock_dim + 1]
+
+        if current_shares <= 0:
+            # no shares to sell
+            return
+        
         if self.turbulence<self.turbulence_threshold:
-            if self.state[index+self.stock_dim+1] > 0:
-                #update balance
-                self.state[0] += \
-                self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
-                 (1- transaction_fee)
-                
-                self.state[index+self.stock_dim+1] -= min(abs(action), self.state[index+self.stock_dim+1])
-                self.cost +=self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
-                 transaction_fee
-                self.trades+=1
-            else:
-                pass
+            shares_sold = min(abs(action), current_shares)
         else:
-            # if turbulence goes over threshold, just clear out all positions 
-            if self.state[index+self.stock_dim+1] > 0:
-                #update balance
-                self.state[0] += self.state[index+1]*self.state[index+self.stock_dim+1]* \
-                              (1- transaction_fee)
-                self.state[index+self.stock_dim+1] =0
-                self.cost += self.state[index+1]*self.state[index+self.stock_dim+1]* \
-                              transaction_fee
-                self.trades+=1
-            else:
-                pass
+            shares_sold = current_shares
+            
+        self.state[0] += self.state[index+1] * shares_sold* (1- transaction_fee)
+        self.state[index+self.stock_dim+1] -= shares_sold
+        self.cost += self.state[index+1]*shares_sold* (transaction_fee)
+        self.trades+=1
+        self.volume += shares_sold
     
     def _buy_stock(self, index, action):
         if abs(action) < 1:
@@ -131,18 +122,20 @@ class StockEnvTrade(gym.Env):
             transaction_fee = 0.001
         # perform buy action based on the sign of the action    
         if self.turbulence< self.turbulence_threshold:
-            available_amount = self.state[0] // self.state[index+1]
+            current_price = self.state[index + 1]
+            available_amount = self.state[0] // current_price
             # print('available_amount:{}'.format(available_amount))
             
-            #update balance
-            self.state[0] -= self.state[index+1]*min(available_amount, action)* \
-                              (1+ transaction_fee)
+            shares_bought = min(abs(action), available_amount)
 
-            self.state[index+self.stock_dim+1] += min(available_amount, action)
+            #update balance
+            self.state[0] -= current_price * shares_bought * (1 + transaction_fee)
+
+            self.state[index+self.stock_dim+1] += shares_bought
             
-            self.cost+=self.state[index+1]*min(available_amount, action)* \
-                              transaction_fee
+            self.cost += current_price * shares_bought * transaction_fee
             self.trades+=1
+            self.volume += shares_bought
         else:
             pass
 
@@ -246,60 +239,64 @@ class StockEnvTrade(gym.Env):
             self.terminal = False
             self.rewards_memory = []
             if self.initial:
-              if self.if_mvo:
-              self.state = [self.initial_balance] + \
-                            self.data.adjcp.values.tolist() + \
-                            self.initial_arrangement + \
-                            self.data.macd.values.tolist() + \
-                            self.data.rsi.values.tolist()  + \
-                            self.data.cci.values.tolist()  + \
-                            self.data.adx.values.tolist() 
-                if 'VIX' in self.data.columns:
-                    self.state += [self.data.VIX.values[0]]
-             else:
-                self.state = [INITIAL_ACCOUNT_BALANCE] + \
-                              self.data.adjcp.values.tolist() + \
-                              [0]*self.stock_dim + \
-                              self.data.macd.values.tolist() + \
-                              self.data.rsi.values.tolist()  + \
-                              self.data.cci.values.tolist()  + \
-                              self.data.adx.values.tolist()
-                if 'VIX' in self.data.columns:
-                    self.state += [self.data.VIX.values[0]]
-                self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
-        else:
-            if self.if_fix:
-                previous_total_asset = self.previous_state[0]+ \
-                sum(np.array(self.previous_state[1:(self.stock_dim+1)])*np.array(self.previous_state[(self.stock_dim+1):(self.stock_dim*2+1)]))
-
-                self.state = [ self.previous_state[0]] + \
-                            self.data.adjcp.values.tolist() + \
-                            self.previous_state[(self.stock_dim+1):(self.stock_dim*2+1)]+ \
-                            self.data.macd.values.tolist() + \
-                            self.data.rsi.values.tolist()  + \
-                            self.data.cci.values.tolist()  + \
-                            self.data.adx.values.tolist() 
-                if 'VIX' in self.data.columns:
-                    self.state += [self.data.VIX.values[0]]
-                self.asset_memory = [previous_total_asset]
-
+                if self.if_mvo:
+                    self.state = [self.initial_balance] + \
+                                    self.data.adjcp.values.tolist() + \
+                                    self.initial_arrangement + \
+                                    self.data.macd.values.tolist() + \
+                                    self.data.rsi.values.tolist()  + \
+                                    self.data.cci.values.tolist()  + \
+                                    self.data.adx.values.tolist() 
+                    if 'VIX' in self.data.columns:
+                        self.state += [self.data.VIX.values[0]]
+                else:
+                    self.state = [INITIAL_ACCOUNT_BALANCE] + \
+                                self.data.adjcp.values.tolist() + \
+                                [0]*self.stock_dim + \
+                                self.data.macd.values.tolist() + \
+                                self.data.rsi.values.tolist()  + \
+                                self.data.cci.values.tolist()  + \
+                                self.data.adx.values.tolist()
+                    if 'VIX' in self.data.columns:
+                        self.state += [self.data.VIX.values[0]]
+                    self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
             else:
-                self.state = [self.new_balance] + \
-                            self.data.adjcp.values.tolist() + \
-                            self.arrangement+ \
-                            self.data.macd.values.tolist() + \
-                            self.data.rsi.values.tolist()  + \
-                            self.data.cci.values.tolist()  + \
-                            self.data.adx.values.tolist() 
-                if 'VIX' in self.data.columns:
-                    self.state += [self.data.VIX.values[0]]
-                previous_total_asset = self.new_balance+ \
-                sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
-                self.asset_memory = [previous_total_asset]
-        return self.state
+                if self.if_fix:
+                    previous_total_asset = self.previous_state[0]+ \
+                    sum(np.array(self.previous_state[1:(self.stock_dim+1)])*np.array(self.previous_state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+
+                    self.state = [ self.previous_state[0]] + \
+                                self.data.adjcp.values.tolist() + \
+                                self.previous_state[(self.stock_dim+1):(self.stock_dim*2+1)]+ \
+                                self.data.macd.values.tolist() + \
+                                self.data.rsi.values.tolist()  + \
+                                self.data.cci.values.tolist()  + \
+                                self.data.adx.values.tolist() 
+                    if 'VIX' in self.data.columns:
+                        self.state += [self.data.VIX.values[0]]
+                    self.asset_memory = [previous_total_asset]
+
+                else:
+                    self.state = [self.new_balance] + \
+                                self.data.adjcp.values.tolist() + \
+                                self.arrangement+ \
+                                self.data.macd.values.tolist() + \
+                                self.data.rsi.values.tolist()  + \
+                                self.data.cci.values.tolist()  + \
+                                self.data.adx.values.tolist() 
+                    if 'VIX' in self.data.columns:
+                        self.state += [self.data.VIX.values[0]]
+                    previous_total_asset = self.new_balance+ \
+                    sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+                    self.asset_memory = [previous_total_asset]
+            return self.state
 
     def render(self, mode='human', close=False):
         return self.state
+    
+    def _seed(self, seed=None):
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]
 
     def seed(self, seed=None):
         return self._seed(seed)

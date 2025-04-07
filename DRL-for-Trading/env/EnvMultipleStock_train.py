@@ -85,42 +85,47 @@ class StockEnvTrain(gym.Env):
     def _sell_stock(self, index, action):
         if abs(action) < 1:  # threshold (can tune)
             return
-        vix = self.state[-1]  # last element is VIX
-        transaction_fee = self._get_dynamic_transaction_fee(vix)
-        # perform sell action based on the sign of the action
-        if self.state[index+self.stock_dim+1] > 0:
-            #update balance
-            self.state[0] += \
-            self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
-             (1- transaction_fee)
-
-            self.state[index+self.stock_dim+1] -= min(abs(action), self.state[index+self.stock_dim+1])
-            self.cost +=self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
-             transaction_fee
-            self.trades+=1
+        if len(self.state) > 182:
+            vix = self.state[-1]  # last element is VIX
+            transaction_fee = self._get_dynamic_transaction_fee(vix)
         else:
-            pass
+            transaction_fee = 0.001
+
+        current_shares = self.state[index+self.stock_dim+1]
+        # perform sell action based on the sign of the action
+        if current_shares > 0:
+            #update balance
+            shares_sold = min(abs(action), current_shares)
+            sell_price = self.state[index+1]
+            self.state[0] += sell_price * shares_sold * (1 - transaction_fee)
+            self.state[index+self.stock_dim+1] -= shares_sold
+            self.cost += sell_price * shares_sold * transaction_fee
+            self.volume += shares_sold
+            self.trades += 1
+           
 
     # ============== Buy ==============
     def _buy_stock(self, index, action):
         if abs(action) < 1:  # threshold (can tune)
             return
+        if len(self.state) > 182:
+            vix = self.state[-1]
+            transaction_fee = self._get_dynamic_transaction_fee(vix)
+        else:
+            transaction_fee = 0.001
+        
+        buy_price = self.state[index+1]
+        available_amount = self.state[0] // buy_price
+        shares_bought = min(available_amount, action)
 
-        vix = self.state[-1]
-        transaction_fee = self._get_dynamic_transaction_fee(vix)
-        # perform buy action based on the sign of the action
-        available_amount = self.state[0] // self.state[index+1]
-        # print('available_amount:{}'.format(available_amount))
-
-        #update balance
-        self.state[0] -= self.state[index+1]*min(available_amount, action)* \
-                          (1+ transaction_fee)
-
-        self.state[index+self.stock_dim+1] += min(available_amount, action)
-
-        self.cost+=self.state[index+1]*min(available_amount, action)* \
-                          transaction_fee
-        self.trades+=1
+        if shares_bought > 0:
+            # update balance
+            self.state[0] -= buy_price * shares_bought * (1 + transaction_fee)
+            self.state[index+self.stock_dim+1] += shares_bought
+            self.cost += buy_price * shares_bought * transaction_fee
+            self.volume += shares_bought
+            self.trades += 1
+        
         
     def step(self, actions):
         self.terminal = self.day >= len(self.df.index.unique()) - 1
@@ -243,15 +248,15 @@ class StockEnvTrain(gym.Env):
         else:
         #initiate state
 
-        self.state = [INITIAL_ACCOUNT_BALANCE] + \
-                      self.data.adjcp.values.tolist() + \
-                      [0]*self.stock_dim + \
-                      self.data.macd.values.tolist() + \
-                      self.data.rsi.values.tolist() + \
-                      self.data.cci.values.tolist() + \
-                      self.data.adx.values.tolist()  + \
-            [self.data.VIX.values[0]]
-        self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
+            self.state = [INITIAL_ACCOUNT_BALANCE] + \
+                        self.data.adjcp.values.tolist() + \
+                        [0]*self.stock_dim + \
+                        self.data.macd.values.tolist() + \
+                        self.data.rsi.values.tolist() + \
+                        self.data.cci.values.tolist() + \
+                        self.data.adx.values.tolist()  + \
+                [self.data.VIX.values[0]]
+            self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
 
         # iteration += 1 
         # print("Reset state shape:", np.array(self.state).shape)
@@ -283,6 +288,9 @@ class StockEnvTrain(gym.Env):
         adjusted_reward = base_reward - penalty * abs(base_reward)
         return adjusted_reward
     
+    def _seed(self, seed=None):
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]
+    
     def seed(self, seed=None):
         return self._seed(seed)
-

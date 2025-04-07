@@ -55,15 +55,15 @@ class StockEnvValidation(gym.Env):
 
         # initalize state
 
-        self.state = [INITIAL_ACCOUNT_BALANCE] + \
-                      self.data.adjcp.values.tolist() + \
-                      [0]*self.stock_dim + \
-                      self.data.macd.values.tolist() + \
-                      self.data.rsi.values.tolist() + \
-                      self.data.cci.values.tolist() + \
-                      self.data.adx.values.tolist() + \
-                    [self.data.VIX.values[0]]
-        self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
+            self.state = [INITIAL_ACCOUNT_BALANCE] + \
+                        self.data.adjcp.values.tolist() + \
+                        [0]*self.stock_dim + \
+                        self.data.macd.values.tolist() + \
+                        self.data.rsi.values.tolist() + \
+                        self.data.cci.values.tolist() + \
+                        self.data.adx.values.tolist() + \
+                        [self.data.VIX.values[0]]
+            self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
 
         # initialize reward
         self.reward = 0
@@ -83,34 +83,25 @@ class StockEnvValidation(gym.Env):
     def _sell_stock(self, index, action):
         if abs(action) < 1:
             return  # Skip small trades
+        
         vix = self.state[-1]
         transaction_fee = self._get_dynamic_transaction_fee(vix)
+
+        current_shares = self.state[index + self.stock_dim + 1]
+        if current_shares <= 0:
+            return # No shares to sell
+        
         # perform sell action based on the sign of the action
         if self.turbulence<self.turbulence_threshold:
-            if self.state[index+self.stock_dim+1] > 0:
-                #update balance
-                self.state[0] += \
-                self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
-                 (1- transaction_fee)
-                
-                self.state[index+self.stock_dim+1] -= min(abs(action), self.state[index+self.stock_dim+1])
-                self.cost +=self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
-                 transaction_fee
-                self.trades+=1
-            else:
-                pass
+            shares_sold = min(abs(action), current_shares)
         else:
-            # if turbulence goes over threshold, just clear out all positions 
-            if self.state[index+self.stock_dim+1] > 0:
-                #update balance
-                self.state[0] += self.state[index+1]*self.state[index+self.stock_dim+1]* \
-                              (1- transaction_fee)
-                self.state[index+self.stock_dim+1] =0
-                self.cost += self.state[index+1]*self.state[index+self.stock_dim+1]* \
-                              transaction_fee
-                self.trades+=1
-            else:
-                pass
+            shares_sold = current_shares
+        stock_price = self.state[index + 1]
+        self.state[0] += stock_price * shares_sold * (1 - transaction_fee)
+        self.state[index + self.stock_dim + 1] -= shares_sold
+        self.cost += stock_price * shares_sold * transaction_fee
+        self.trades += 1
+        self.volume += shares_sold
     
     def _buy_stock(self, index, action):
         if abs(action) < 1:
@@ -119,18 +110,19 @@ class StockEnvValidation(gym.Env):
         transaction_fee = self._get_dynamic_transaction_fee(vix)
         # perform buy action based on the sign of the action
         if self.turbulence< self.turbulence_threshold:
-            available_amount = self.state[0] // self.state[index+1]
+            current_price = self.state[index + 1]
+            available_amount = self.state[0] // current_price
+            shares_bought = min(abs(action), available_amount)
             # print('available_amount:{}'.format(available_amount))
             
             #update balance
-            self.state[0] -= self.state[index+1]*min(available_amount, action)* \
-                              (1+ transaction_fee)
+            self.state[0] -= current_price * shares_bought * (1 + transaction_fee)
 
-            self.state[index+self.stock_dim+1] += min(available_amount, action)
+            self.state[index+self.stock_dim+1] += shares_bought
             
-            self.cost+=self.state[index+1]*min(available_amount, action)* \
-                              transaction_fee
+            self.cost+=current_price * shares_bought * transaction_fee
             self.trades+=1
+            self.volume += shares_bought
         else:
             pass
 
@@ -238,7 +230,7 @@ class StockEnvValidation(gym.Env):
         self.rewards_memory = []
         #initiate state
         if self.if_mvo:
-          self.state = [INITIAL_ACCOUNT_BALANCE] + \
+            self.state = [INITIAL_ACCOUNT_BALANCE] + \
                         self.data.adjcp.values.tolist() + \
                         [0]*self.stock_dim + \
                         self.data.macd.values.tolist() + \
@@ -246,11 +238,11 @@ class StockEnvValidation(gym.Env):
                         self.data.cci.values.tolist()  + \
                         self.data.adx.values.tolist()  + \
               [self.data.VIX.values[0]]
-          init_total_asset = self.initial_balance+ \
-                sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
-                self.asset_memory = [init_total_asset]
+            init_total_asset = self.initial_balance+ \
+            sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
+            self.asset_memory = [init_total_asset]
         else:
-          self.state = [INITIAL_ACCOUNT_BALANCE] + \
+            self.state = [INITIAL_ACCOUNT_BALANCE] + \
                         self.data.adjcp.values.tolist() + \
                         [0]*self.stock_dim + \
                         self.data.macd.values.tolist() + \
@@ -258,7 +250,7 @@ class StockEnvValidation(gym.Env):
                         self.data.cci.values.tolist()  + \
                         self.data.adx.values.tolist()  + \
                           [self.data.VIX.values[0]]
-          self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
+            self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         return self.state
 
     def render(self, mode='human', close=False):
@@ -277,6 +269,10 @@ class StockEnvValidation(gym.Env):
         penalty = alpha_volume + alpha_trades + alpha_vix
         adjusted_reward = base_reward - penalty * abs(base_reward)
         return adjusted_reward
+
+    def _seed(self, seed=None):
+        self.np_random, seed = seeding.np_random(seed)
+        return [seed]
 
     def seed(self, seed=None):
         return self._seed(seed)
