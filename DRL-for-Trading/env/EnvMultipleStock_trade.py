@@ -24,7 +24,7 @@ class StockEnvTrade(gym.Env):
     def __init__(self, df, stock_dim, day = 0,turbulence_threshold=140
                  ,initial=True, previous_state=[], model_name='', iteration='',
                  initial_arrangement = None, initial_balance = None,
-                 new_balance = None, arrangement = None, if_fix = False, if_mvo = True):
+                 new_balance = None, arrangement = None, if_fix = False, if_mvo = True, if_dynamic_tc = True):
         #super(StockEnv, self).__init__()
         #money = 10 , scope = 1
         self.day = day
@@ -39,11 +39,12 @@ class StockEnvTrade(gym.Env):
         else:
             self.new_balance = new_balance
             self.arrangement = arrangement
-        self.previous_state = previous_state\
+        self.previous_state = previous_state
         
         self.turbulence_threshold = turbulence_threshold
         self.model_name = model_name
         self.iteration = iteration
+        self.if_dynamic_tc = if_dynamic_tc
 
         # action_space normalization and shape is STOCK_DIM
         self.action_space = spaces.Box(low = -1, high = 1,shape = (self.stock_dim,)) 
@@ -72,6 +73,7 @@ class StockEnvTrade(gym.Env):
         self.turbulence = 0
         self.cost = 0
         self.trades = 0
+        self.volume = 0
         # memorize all the total balance change
         self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
         self.rewards_memory = []
@@ -84,13 +86,19 @@ class StockEnvTrade(gym.Env):
         base_fee = 0.001
         delta = 0.0001
         return base_fee + (vix * delta)
+    
+    def compute_reward(self, end_total_asset, begin_total_asset, volume, num_trades, vix):
+        base_reward = end_total_asset - begin_total_asset
+        alpha_volume = 0.01 * (volume / 1e6)
+        alpha_trades = 0.05 * num_trades
+        alpha_vix = 0.05 * (vix / 20)
+        penalty = alpha_volume + alpha_trades + alpha_vix
+        adjusted_reward = base_reward - penalty * abs(base_reward)
+        return adjusted_reward
 
     def _sell_stock(self, index, action):
-        if abs(action) < 1:
-            return
-
         # perform sell action based on the sign of the action
-        if len(self.state) > 182:  # means we have VIX appended
+        if self.if_dynamic_tc:  # means we have VIX appended
             vix = self.state[-1]
             transaction_fee = self._get_dynamic_transaction_fee(vix)
         else:
@@ -113,9 +121,7 @@ class StockEnvTrade(gym.Env):
         self.volume += shares_sold
     
     def _buy_stock(self, index, action):
-        if abs(action) < 1:
-            return
-        if len(self.state) > 182:  # means we have VIX appended
+        if self.if_dynamic_tc:  # means we have VIX appended
             vix = self.state[-1]
             transaction_fee = self._get_dynamic_transaction_fee(vix)
         else:
@@ -138,15 +144,6 @@ class StockEnvTrade(gym.Env):
             self.volume += shares_bought
         else:
             pass
-
-    def compute_reward(self, end_total_asset, begin_total_asset, volume, num_trades, vix):
-        base_reward = end_total_asset - begin_total_asset
-        alpha_volume = 0.01 * (volume / 1e6)
-        alpha_trades = 0.05 * num_trades
-        alpha_vix = 0.05 * (vix / 20)
-        penalty = alpha_volume + alpha_trades + alpha_vix
-        adjusted_reward = base_reward - penalty * abs(base_reward)
-        return adjusted_reward
 
     def step(self, actions):
         self.terminal = (self.day >= (len(self.df.index.unique()) - 1))
@@ -183,8 +180,8 @@ class StockEnvTrade(gym.Env):
 
             
         else:
-            self.volume = 0
-            self.trades = 0
+            # self.volume = 0
+            # self.trades = 0
 
             actions = actions * HMAX_NORMALIZE
             #actions = (actions.astype(int))
@@ -223,8 +220,11 @@ class StockEnvTrade(gym.Env):
             sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             self.asset_memory.append(end_total_asset)
 
-            vix = self.state[-1] if len(self.state) == 182 else 0
-            self.reward = self.compute_reward(end_total_asset, begin_total_asset, self.volume, self.trades, vix)
+            if self.if_dynamic_tc:
+                vix = self.state[-1]
+                self.reward = self.compute_reward(end_total_asset, begin_total_asset, self.volume, self.trades, vix)
+            else:
+                self.reward = end_total_asset - begin_total_asset
             self.rewards_memory.append(self.reward)
             self.reward *= REWARD_SCALING
 
@@ -236,6 +236,7 @@ class StockEnvTrade(gym.Env):
             self.turbulence = 0
             self.cost = 0
             self.trades = 0
+            self.volume = 0
             self.terminal = False
             self.rewards_memory = []
             if self.initial:

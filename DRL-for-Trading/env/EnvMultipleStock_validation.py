@@ -21,7 +21,7 @@ class StockEnvValidation(gym.Env):
     metadata = {'render.modes': ['human']}
 
     def __init__(self, df, stock_dim, day = 0, turbulence_threshold=140, iteration='',
-                 if_mvo=False, initial_arrangement = None, initial_balance = None):
+                 if_mvo=False, initial_arrangement = None, initial_balance = None, if_dynamic_tc = True):
         #super(StockEnv, self).__init__()
         #money = 10 , scope = 1
         self.day = day
@@ -36,6 +36,7 @@ class StockEnvValidation(gym.Env):
         self.data = self.df.loc[self.day,:]
         self.terminal = False     
         self.turbulence_threshold = turbulence_threshold
+        self.if_dynamic_tc = if_dynamic_tc
 
         self.if_mvo = if_mvo
         if self.if_mvo:
@@ -47,7 +48,8 @@ class StockEnvValidation(gym.Env):
                           self.data.macd.values.tolist() + \
                           self.data.rsi.values.tolist()  + \
                           self.data.cci.values.tolist()  + \
-                          self.data.adx.values.tolist() 
+                          self.data.adx.values.tolist() + \
+                            [self.data.VIX.values[0]]
             init_total_asset = self.initial_balance+ \
             sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             self.asset_memory = [init_total_asset]
@@ -70,22 +72,18 @@ class StockEnvValidation(gym.Env):
         self.turbulence = 0
         self.cost = 0
         self.trades = 0
+        self.volume = 0
         self.rewards_memory = []
         self.iteration = iteration
 
         self._seed()
 
-    def _get_dynamic_transaction_fee(self, vix):
-        base_fee = 0.001
-        delta = 0.0001
-        return base_fee + (vix * delta)
-
     def _sell_stock(self, index, action):
-        if abs(action) < 1:
-            return  # Skip small trades
-        
-        vix = self.state[-1]
-        transaction_fee = self._get_dynamic_transaction_fee(vix)
+        if self.if_dynamic_tc:
+            vix = self.state[-1]
+            transaction_fee = self._get_dynamic_transaction_fee(vix)
+        else:
+            transaction_fee = 0.001
 
         current_shares = self.state[index + self.stock_dim + 1]
         if current_shares <= 0:
@@ -104,10 +102,11 @@ class StockEnvValidation(gym.Env):
         self.volume += shares_sold
     
     def _buy_stock(self, index, action):
-        if abs(action) < 1:
-            return  # Skip small trades
-        vix = self.state[-1]
-        transaction_fee = self._get_dynamic_transaction_fee(vix)
+        if self.if_dynamic_tc:
+            vix = self.state[-1]
+            transaction_fee = self._get_dynamic_transaction_fee(vix)
+        else:
+            transaction_fee = 0.001
         # perform buy action based on the sign of the action
         if self.turbulence< self.turbulence_threshold:
             current_price = self.state[index + 1]
@@ -161,8 +160,8 @@ class StockEnvValidation(gym.Env):
 
         else:
             # reset volume/trades
-            self.volume = 0
-            self.trades = 0
+            # self.volume = 0
+            # self.trades = 0
 
             begin_total_asset = self.state[0] + sum(
                 np.array(self.state[1:(self.stock_dim+1)]) *
@@ -207,11 +206,12 @@ class StockEnvValidation(gym.Env):
             sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             self.asset_memory.append(end_total_asset)
 
-            volume = self.volume
             num_trades = self.trades
-            vix = self.state[-1]
-
-            self.reward = self.compute_reward(end_total_asset, begin_total_asset, volume, num_trades, vix)
+            if self.if_dynamic_tc:
+                vix = self.state[-1]
+                self.reward = self.compute_reward(end_total_asset, begin_total_asset, self.volume, num_trades, vix)
+            else:
+                self.reward = end_total_asset - begin_total_asset
             self.rewards_memory.append(self.reward)
             self.reward *= REWARD_SCALING
 

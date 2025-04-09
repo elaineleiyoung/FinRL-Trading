@@ -55,64 +55,34 @@ def add_technical_indicator(df):
     stock['close'] = stock['adjcp']
     unique_ticker = stock.tic.unique()
 
-    # macd = pd.DataFrame()
-    # rsi = pd.DataFrame()
-    # cci = pd.DataFrame()
-    # dx = pd.DataFrame()
+    macd = pd.DataFrame()
+    rsi = pd.DataFrame()
+    cci = pd.DataFrame()
+    dx = pd.DataFrame()
 
-    # for i in range(len(unique_ticker)):
-    #     temp_macd = stock[stock.tic == unique_ticker[i]]['macd']
-    #     temp_macd = pd.DataFrame(temp_macd)
-    #     macd = pd.concat([macd, temp_macd], ignore_index=True)
-    
-    #     ## rsi
-    #     temp_rsi = stock[stock.tic == unique_ticker[i]]['rsi_30']
-    #     temp_rsi = pd.DataFrame(temp_rsi)
-    #     rsi = pd.concat([rsi, temp_rsi], ignore_index=True)
-    
-    #     ## cci
-    #     temp_cci = stock[stock.tic == unique_ticker[i]]['cci_30']
-    #     temp_cci = pd.DataFrame(temp_cci)
-    #     cci = pd.concat([cci, temp_cci], ignore_index=True)
-    
-    #     ## adx
-    #     temp_dx = stock[stock.tic == unique_ticker[i]]['dx_30']
-    #     temp_dx = pd.DataFrame(temp_dx)
-    #     dx = pd.concat([dx, temp_dx], ignore_index=True)
+    for i in range(len(unique_ticker)):
+        ## macd
+        temp_macd = stock[stock.tic == unique_ticker[i]]['macd']
+        temp_macd = pd.DataFrame(temp_macd)
+        macd = pd.concat([macd,temp_macd])
+        ## rsi
+        temp_rsi = stock[stock.tic == unique_ticker[i]]['rsi_30']
+        temp_rsi = pd.DataFrame(temp_rsi)
+        rsi = pd.concat([rsi, temp_rsi])
+        ## cci
+        temp_cci = stock[stock.tic == unique_ticker[i]]['cci_30']
+        temp_cci = pd.DataFrame(temp_cci)
+        cci = pd.concat([cci, temp_cci])
+        ## adx
+        temp_dx = stock[stock.tic == unique_ticker[i]]['dx_30']
+        temp_dx = pd.DataFrame(temp_dx)
+        dx = pd.concat([dx, temp_dx])
 
 
-    # df['macd'] = macd
-    # df['rsi'] = rsi
-    # df['cci'] = cci
-    # df['adx'] = dx
-
-    # return df
-    macd_list, rsi_list, cci_list, dx_list = [], [], [], []
-
-    for ticker in unique_ticker:
-        temp_macd = stock[stock.tic == ticker][['macd']].reset_index(drop=True)
-        macd_list.append(temp_macd)
-
-        temp_rsi = stock[stock.tic == ticker][['rsi_30']].reset_index(drop=True)
-        rsi_list.append(temp_rsi)
-
-        temp_cci = stock[stock.tic == ticker][['cci_30']].reset_index(drop=True)
-        cci_list.append(temp_cci)
-
-        temp_dx = stock[stock.tic == ticker][['dx_30']].reset_index(drop=True)
-        dx_list.append(temp_dx)
-
-    # ✅ Merge all indicators
-    df['macd'] = pd.concat(macd_list, ignore_index=True)
-    df['rsi'] = pd.concat(rsi_list, ignore_index=True)
-    df['cci'] = pd.concat(cci_list, ignore_index=True)
-    df['adx'] = pd.concat(dx_list, ignore_index=True)
-
-    # ✅ Ensure proper ordering before merging
-    df = df.sort_values(['datadate', 'tic']).reset_index(drop=True)
-
-    # ✅ Fill missing values only after merging indicators
-    df = df.fillna(method='bfill')
+    df['macd'] = macd
+    df['rsi'] = rsi
+    df['cci'] = cci
+    df['adx'] = dx
 
     return df
 
@@ -206,10 +176,15 @@ def preprocess_data(if_fix = False, if_vix = False, selected_stocks = False, sto
     # df_preprocess.to_csv('pre_with_ti.csv')
     # df_preprocess = pd.read_csv('pre_with_ti.csv', index_col=0)
     # df_preprocess['datadate'] = pd.to_datetime(df_preprocess['datadate'], format="%Y-%m-%d")
-    vix_data = load_vix_data("data/VIXCLS.csv")
-    df_preprocess = add_vix_data(df_preprocess, vix_data)
-    if not if_vix:
+    
+    if if_vix:
+        vix_data = load_vix_data("data/VIXCLS.csv")
+        vix_data = add_vix_return_volatility(vix_data, 30)
+        df_preprocess = add_vix_data(df_preprocess, vix_data)
+
+    else:
         df_preprocess = add_turbulence(df_preprocess, if_fix)
+        
     # fill the missing values at the beginning
     df_preprocess.fillna(method='bfill',inplace=True)
     return df_preprocess

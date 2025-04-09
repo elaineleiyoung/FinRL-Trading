@@ -21,13 +21,12 @@ class StockEnvTrain(gym.Env):
 
 
     def __init__(self, df, stock_dim, day = 0, if_mvo = False,
-                 initial_arrangement = None, initial_balance = None):
+                 initial_arrangement = None, initial_balance = None, if_dynamic_tc = True):
         #super(StockEnv, self).__init__()
         #money = 10 , scope = 1
         self.day = day
         self.df = df
         self.volume = 0
-        self.trades = 0
         self.cost = 0
         self.reward = 0
         self.stock_dim = stock_dim
@@ -40,6 +39,7 @@ class StockEnvTrain(gym.Env):
         self.data = self.df.loc[self.day,:]
         self.terminal = False             
         self.if_mvo = if_mvo
+        self.if_dynamic_tc = if_dynamic_tc
         if self.if_mvo:
             self.initial_arrangement = initial_arrangement
             self.initial_balance = initial_balance
@@ -49,14 +49,13 @@ class StockEnvTrain(gym.Env):
                           self.data.macd.values.tolist() + \
                           self.data.rsi.values.tolist()  + \
                           self.data.cci.values.tolist()  + \
-                          self.data.adx.values.tolist() 
+                          self.data.adx.values.tolist() + \
+                          [self.data.VIX.values[0]]
             init_total_asset = self.initial_balance+ \
             sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             self.asset_memory = [init_total_asset]
         else:
         # initalize state
-
-
             self.state = [INITIAL_ACCOUNT_BALANCE] + \
                         self.data.adjcp.values.tolist() + \
                         [0]*self.stock_dim + \
@@ -72,20 +71,11 @@ class StockEnvTrain(gym.Env):
         self.cost = 0
         # memorize all the total balance change
         self.rewards_memory = []
-
+        self.trades = 0
         self._seed()
 
-    # ============== Transaction Fee (VIX-Based) ==============
-    def _get_dynamic_transaction_fee(self, vix):
-        base_fee = 0.001
-        delta = 0.0001
-        return base_fee + (vix * delta)
-
-    # ============== Sell ==============
     def _sell_stock(self, index, action):
-        if abs(action) < 1:  # threshold (can tune)
-            return
-        if len(self.state) > 182:
+        if self.if_dynamic_tc:
             vix = self.state[-1]  # last element is VIX
             transaction_fee = self._get_dynamic_transaction_fee(vix)
         else:
@@ -104,11 +94,8 @@ class StockEnvTrain(gym.Env):
             self.trades += 1
            
 
-    # ============== Buy ==============
     def _buy_stock(self, index, action):
-        if abs(action) < 1:  # threshold (can tune)
-            return
-        if len(self.state) > 182:
+        if self.if_dynamic_tc:
             vix = self.state[-1]
             transaction_fee = self._get_dynamic_transaction_fee(vix)
         else:
@@ -118,13 +105,11 @@ class StockEnvTrain(gym.Env):
         available_amount = self.state[0] // buy_price
         shares_bought = min(available_amount, action)
 
-        if shares_bought > 0:
-            # update balance
-            self.state[0] -= buy_price * shares_bought * (1 + transaction_fee)
-            self.state[index+self.stock_dim+1] += shares_bought
-            self.cost += buy_price * shares_bought * transaction_fee
-            self.volume += shares_bought
-            self.trades += 1
+        self.state[0] -= buy_price * shares_bought * (1 + transaction_fee)
+        self.state[index+self.stock_dim+1] += shares_bought
+        self.cost += buy_price * shares_bought * transaction_fee
+        self.volume += shares_bought
+        self.trades += 1
         
         
     def step(self, actions):
@@ -159,8 +144,8 @@ class StockEnvTrain(gym.Env):
             return self.state, self.reward, self.terminal, {}
         else:
             # reset volume/trades for this step
-            self.volume = 0
-            self.trades = 0
+            # self.volume = 0
+            # self.trades = 0
 
             # 1) compute initial portfolio value
             begin_total_asset = (
@@ -210,12 +195,12 @@ class StockEnvTrain(gym.Env):
             self.asset_memory.append(end_total_asset)
 
             # 9) custom reward logic
-            volume = self.volume
-            num_trades = self.trades
-            vix = self.state[-1]
-            self.reward = self.compute_reward(end_total_asset, begin_total_asset, volume, num_trades, vix)
+            if self.if_dynamic_tc:
+                vix = self.state[-1]
+                self.reward = self.compute_reward(end_total_asset, begin_total_asset, self.volume, self.trades, vix)
+            else:
+                self.reward = end_total_asset - begin_total_asset
             self.rewards_memory.append(self.reward)
-            
             self.reward = self.reward*REWARD_SCALING
 
         # print(f"Step {self.day}, Reward: {self.reward}")
@@ -241,13 +226,13 @@ class StockEnvTrain(gym.Env):
                           self.data.macd.values.tolist() + \
                           self.data.rsi.values.tolist()  + \
                           self.data.cci.values.tolist()  + \
-                          self.data.adx.values.tolist() 
+                          self.data.adx.values.tolist() + \
+                            [self.data.VIX.values[0]]
             init_total_asset = self.initial_balance+ \
             sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
             self.asset_memory = [init_total_asset]
         else:
         #initiate state
-
             self.state = [INITIAL_ACCOUNT_BALANCE] + \
                         self.data.adjcp.values.tolist() + \
                         [0]*self.stock_dim + \
@@ -255,7 +240,7 @@ class StockEnvTrain(gym.Env):
                         self.data.rsi.values.tolist() + \
                         self.data.cci.values.tolist() + \
                         self.data.adx.values.tolist()  + \
-                [self.data.VIX.values[0]]
+                        [self.data.VIX.values[0]]
             self.asset_memory = [INITIAL_ACCOUNT_BALANCE]
 
         # iteration += 1 
