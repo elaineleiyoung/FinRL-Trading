@@ -136,6 +136,11 @@ def add_vix_data(df, vix_data):
     df = df.merge(vix_data, on='datadate', how='left')
     df['VIX'] = df['VIX'].ffill()  # Forward-fill missing VIX values
     return df
+def add_vix_return_volatility(vix_data: pd.DataFrame, window: int = 30):
+    vix_data = vix_data.sort_values('datadate').reset_index(drop=True)
+    vix_data['VIX_Return'] = vix_data['VIX'].pct_change()
+    vix_data[f'turbulence'] = vix_data['VIX_Return'].rolling(window=window).std().fillna(0) * np.sqrt(252)
+    return vix_data
 
 def get_price_data(start_date):
     price_df = pd.read_csv('../data_processor_update/sp500_price_199601_202502.csv')
@@ -153,7 +158,7 @@ def get_price_data(start_date):
     return price_df
 
 def get_selected_stock(date, if_single = False):
-    df = pd.read_csv('stock_selected.csv')
+    df = pd.read_csv('data/stock_selected.csv')
     df.rename(columns={'gvkey':'tic','trade_date':'datadate'}, inplace=True)
     df = df[['tic','datadate']]
     df = df.sort_values(['datadate','tic'], ignore_index=True)

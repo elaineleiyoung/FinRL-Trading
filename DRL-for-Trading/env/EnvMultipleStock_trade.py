@@ -205,7 +205,7 @@ class StockEnvTrade(gym.Env):
                 self._buy_stock(idx, actions[idx])
 
             self.day += 1
-            self.data = self.df.loc[self.day,:]         
+            self.data = self.df.loc[self.day,:]
             self.turbulence = self.data['turbulence'].values[0]
             #print(self.turbulence)
             #load next state

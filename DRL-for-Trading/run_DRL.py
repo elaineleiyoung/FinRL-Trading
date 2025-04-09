@@ -20,12 +20,15 @@ def run_model() -> None:
     stock_selected_df = get_selected_stock(start_date)
     report_date = stock_selected_df.datadate.unique().tolist()
 
+
     preprocessed_path = 'DRL-for-Trading\done_data_fix.csv' #_turbulance_full
+
     if os.path.exists(preprocessed_path):
         data = pd.read_csv(preprocessed_path, index_col=0)
         data["datadate"] = pd.to_datetime(data["datadate"])
     else:
-        data = preprocess_data(if_fix = True, if_vix = False, selected_stocks = True,
+
+        data = preprocess_data(if_fix = True, if_vix = True, selected_stocks = True,
                                stock_selected_df = stock_selected_df,
                                start_date = start_date)
         data.to_csv(preprocessed_path)
@@ -33,7 +36,7 @@ def run_model() -> None:
     print(data.head())
     print(data.size)
 
-    # count_path = "DRL-for-Trading\preprocessing\count.csv"
+    # count_path = "preprocessing\count.csv"
     # count_df = pd.read_csv(count_path, index_col=0)
     # # start_date = count_df.iloc[0, 0]
     # end_date = data.iloc[-1, 0]
@@ -53,7 +56,8 @@ def run_model() -> None:
                           start_date = start_date,
                           val_start_date = val_start_date,
                           stock_selected_df = stock_selected_df,
-                          if_fix = True)
+                          if_fix = True,
+                          if_vix = True)
 
     #_logger.info(f"saving model version: {_version}")
 
