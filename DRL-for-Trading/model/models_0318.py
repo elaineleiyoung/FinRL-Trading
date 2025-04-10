@@ -145,7 +145,7 @@ def DRL_validation(model, test_data, test_env, test_obs) -> None:
 
 def get_validation_sharpe(iteration):
     ###Calculate Sharpe ratio based on validation results###
-    df_total_value = pd.read_csv('DRL-for-Trading/results/account_value_validation_{}.csv'.format(iteration), index_col=0)
+    df_total_value = pd.read_csv('results/account_value_validation_{}.csv'.format(iteration), index_col=0)
     df_total_value.columns = ['account_value_train']
     df_total_value['daily_return'] = df_total_value.pct_change(1)
     sharpe = (4 ** 0.5) * df_total_value['daily_return'].mean() / \
@@ -180,7 +180,7 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
     new_balance_ddpg, arrangement_ddpg = [], []
 
     model_use = []
-    vix_df = load_vix_data("DRL-for-Trading\data\VIXCLS.csv")
+    vix_df = load_vix_data("data/VIXCLS.csv")
     vix_df['datadate'] = pd.to_datetime(vix_df['datadate'])
     vix_df = vix_df[(vix_df.datadate<val_start_date)& (vix_df.datadate>=start_date)] 
     VIX_threshold = np.quantile(vix_df.VIX.dropna().values, .90)

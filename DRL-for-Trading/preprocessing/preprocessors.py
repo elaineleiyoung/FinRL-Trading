@@ -47,13 +47,11 @@ def calcualte_price(df):
 
 def add_technical_indicator(df):
     """
-    calcualte technical indicators
-    use stockstats package to add technical inidactors
-    :param data: (df) pandas dataframe
-    :return: (df) pandas dataframe
+    Calculate technical indicators using the stockstats package.
+    :param df: (pd.DataFrame) Input dataframe.
+    :return: (pd.DataFrame) Dataframe with added technical indicators.
     """
     stock = Sdf.retype(df.copy())
-
     stock['close'] = stock['adjcp']
     unique_ticker = stock.tic.unique()
 
@@ -62,7 +60,6 @@ def add_technical_indicator(df):
     cci = pd.DataFrame()
     dx = pd.DataFrame()
 
-    #temp = stock[stock.tic == unique_ticker[0]]['macd']
     for i in range(len(unique_ticker)):
         ## macd
         temp_macd = stock[stock.tic == unique_ticker[i]]['macd']
@@ -116,11 +113,11 @@ def add_vix_return_volatility(vix_data: pd.DataFrame, window: int = 30):
     return vix_data
 
 def get_price_data(start_date):
-    price_df = pd.read_csv('data/sp500_price_199601_202502.csv')
+    price_df = pd.read_csv('../data_processor_update/sp500_price_199601_202502.csv')
     price_df.rename(columns={'date':'datadate','adj_close_q':'adjcp','openprc':'open',
                                 'askhi':'high','bidlo':'low','vol':'volume'}, inplace=True)
     price_df = price_df[['datadate', 'tic', 'adjcp', 'open', 'high', 'low', 'volume']]
-    fundamental_df = pd.read_csv('data/sp500_fundamental_199601_202502.csv')
+    fundamental_df = pd.read_csv('../data_processor_update/sp500_fundamental_199601_202502.csv')
     fundamental_df.drop_duplicates(subset=['gvkey'], inplace=True)
     fundamental_df = fundamental_df[['gvkey','tic']]
     price_df = pd.merge(price_df, fundamental_df, on = 'tic')
@@ -179,13 +176,15 @@ def preprocess_data(if_fix = False, if_vix = False, selected_stocks = False, sto
     # df_preprocess.to_csv('pre_with_ti.csv')
     # df_preprocess = pd.read_csv('pre_with_ti.csv', index_col=0)
     # df_preprocess['datadate'] = pd.to_datetime(df_preprocess['datadate'], format="%Y-%m-%d")
+    
     if if_vix:
-        vix_data = load_vix_data("data\VIXCLS.csv")
+        vix_data = load_vix_data("data/VIXCLS.csv")
         vix_data = add_vix_return_volatility(vix_data, 30)
         df_preprocess = add_vix_data(df_preprocess, vix_data)
 
     else:
         df_preprocess = add_turbulence(df_preprocess, if_fix)
+        
     # fill the missing values at the beginning
     df_preprocess.fillna(method='bfill',inplace=True)
     return df_preprocess

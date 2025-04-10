@@ -130,7 +130,7 @@ def DRL_prediction(df,
             # last_state = env_trade.render()
             last_state = env_trade.envs[0].render()
     pd.DataFrame({"last_state": last_state}).to_csv(
-        f"DRL-for-Trading/results/last_state_{name}_{iter_num}.csv", index=False
+        f"results/last_state_{name}_{iter_num}.csv", index=False
     )
     return last_state
 
@@ -145,7 +145,7 @@ def DRL_validation(model, test_data, test_env, test_obs) -> None:
 
 def get_validation_sharpe(iteration):
     ###Calculate Sharpe ratio based on validation results###
-    df_total_value = pd.read_csv('DRL-for-Trading/results/account_value_validation_{}.csv'.format(iteration), index_col=0)
+    df_total_value = pd.read_csv('results/account_value_validation_{}.csv'.format(iteration), index_col=0)
     df_total_value.columns = ['account_value_train']
     df_total_value['daily_return'] = df_total_value.pct_change(1)
     sharpe = (4 ** 0.5) * df_total_value['daily_return'].mean() / \
@@ -163,10 +163,10 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
     last_state_ppo = []
     last_state_ddpg = []
 
-    last_state_ensemble = pd.read_csv('DRL-for-Trading/results/last_state_ensemble_63.csv')['last_state'].tolist()
-    last_state_a2c = pd.read_csv('DRL-for-Trading/results/last_state_a2c_63.csv')['last_state'].tolist()
-    last_state_ppo = pd.read_csv('DRL-for-Trading/results/last_state_ppo_63.csv')['last_state'].tolist()
-    last_state_ddpg = pd.read_csv('DRL-for-Trading/results/last_state_ddpg_63.csv')['last_state'].tolist()
+    last_state_ensemble = pd.read_csv('results/last_state_ensemble_63.csv')['last_state'].tolist()
+    last_state_a2c = pd.read_csv('results/last_state_a2c_63.csv')['last_state'].tolist()
+    last_state_ppo = pd.read_csv('results/last_state_ppo_63.csv')['last_state'].tolist()
+    last_state_ddpg = pd.read_csv('results/last_state_ddpg_63.csv')['last_state'].tolist()
     initial_arrangement = []
     initial_balance = 0
     
