@@ -85,21 +85,33 @@ class StockEnvValidation(gym.Env):
         else:
             transaction_fee = 0.001
 
-        current_shares = self.state[index + self.stock_dim + 1]
-        if current_shares <= 0:
-            return # No shares to sell
-        
-        # perform sell action based on the sign of the action
         if self.turbulence<self.turbulence_threshold:
-            shares_sold = min(abs(action), current_shares)
+            if self.state[index+self.stock_dim+1] > 0:
+                #update balance
+                self.state[0] += \
+                self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
+                 (1- transaction_fee)
+                
+                self.state[index+self.stock_dim+1] -= min(abs(action), self.state[index+self.stock_dim+1])
+                self.cost +=self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
+                 transaction_fee
+                self.trades+=1
+                self.volume += min(abs(action), self.state[index+self.stock_dim+1])
+            else:
+                pass
         else:
-            shares_sold = current_shares
-        stock_price = self.state[index + 1]
-        self.state[0] += stock_price * shares_sold * (1 - transaction_fee)
-        self.state[index + self.stock_dim + 1] -= shares_sold
-        self.cost += stock_price * shares_sold * transaction_fee
-        self.trades += 1
-        self.volume += shares_sold
+            # if turbulence goes over threshold, just clear out all positions 
+            if self.state[index+self.stock_dim+1] > 0:
+                #update balance
+                self.state[0] += self.state[index+1]*self.state[index+self.stock_dim+1]* \
+                              (1- transaction_fee)
+                self.state[index+self.stock_dim+1] =0
+                self.cost += self.state[index+1]*self.state[index+self.stock_dim+1]* \
+                              transaction_fee
+                self.trades+=1
+                self.volume += self.state[index+self.stock_dim+1]
+            else:
+                pass
     
     def _buy_stock(self, index, action):
         if self.if_dynamic_tc:
@@ -107,24 +119,26 @@ class StockEnvValidation(gym.Env):
             transaction_fee = self._get_dynamic_transaction_fee(vix)
         else:
             transaction_fee = 0.001
-        # perform buy action based on the sign of the action
+
         if self.turbulence< self.turbulence_threshold:
-            current_price = self.state[index + 1]
-            available_amount = self.state[0] // current_price
-            shares_bought = min(abs(action), available_amount)
+            available_amount = self.state[0] // self.state[index+1]
             # print('available_amount:{}'.format(available_amount))
             
             #update balance
-            self.state[0] -= current_price * shares_bought * (1 + transaction_fee)
+            self.state[0] -= self.state[index+1]*min(available_amount, action)* \
+                              (1+ transaction_fee)
 
-            self.state[index+self.stock_dim+1] += shares_bought
+            self.state[index+self.stock_dim+1] += min(available_amount, action)
             
-            self.cost+=current_price * shares_bought * transaction_fee
+            self.cost+=self.state[index+1]*min(available_amount, action)* \
+                              transaction_fee
             self.trades+=1
-            self.volume += shares_bought
+            self.volume += min(available_amount, action)
         else:
+            # if turbulence goes over threshold, just stop buying
             pass
-
+        # perform buy action based on the sign of the action
+    
     def step(self, actions):
         self.terminal = self.day >= (len(self.df.index.unique()) - 1)
 
@@ -136,32 +150,18 @@ class StockEnvValidation(gym.Env):
             df_total_value.to_csv(config.RESULTS_DIR + '/account_value_validation_{}.csv'.format(self.iteration))
             end_total_asset = self.state[0]+ \
             sum(np.array(self.state[1:(self.stock_dim+1)])*np.array(self.state[(self.stock_dim+1):(self.stock_dim*2+1)]))
-            #print("previous_total_asset:{}".format(self.asset_memory[0]))           
-
-            #print("end_total_asset:{}".format(end_total_asset))
-            #print("total_reward:{}".format(self.state[0]+sum(np.array(self.state[1:(STOCK_DIM+1)])*np.array(self.state[(STOCK_DIM+1):61]))- self.asset_memory[0] ))
-            #print("total_cost: ", self.cost)
-            #print("total trades: ", self.trades)
-
+        
             df_total_value.columns = ['account_value']
             df_total_value['daily_return']=df_total_value.pct_change(1)
             sharpe = (4**0.5)*df_total_value['daily_return'].mean()/ \
                   df_total_value['daily_return'].std()
-            #print("Sharpe: ",sharpe)
-            
-            #df_rewards = pd.DataFrame(self.rewards_memory)
-            #df_rewards.to_csv('results/account_rewards_trade_{}.csv'.format(self.iteration))
-            
-            # print('total asset: {}'.format(self.state[0]+ sum(np.array(self.state[1:29])*np.array(self.state[29:]))))
-            #with open('obs.pkl', 'wb') as f:  
-            #    pickle.dump(self.state, f)
             
             return self.state, self.reward, self.terminal,{}
 
         else:
             # reset volume/trades
-            # self.volume = 0
-            # self.trades = 0
+            self.volume = 0
+            self.trades = 0
 
             begin_total_asset = self.state[0] + sum(
                 np.array(self.state[1:(self.stock_dim+1)]) *
@@ -190,7 +190,6 @@ class StockEnvValidation(gym.Env):
             self.data = self.df.loc[self.day,:]
             self.turbulence = self.data['turbulence'].values[0]
 
-            #print(self.turbulence)
             #load next state
             # print("stock_shares:{}".format(self.state[29:]))
             self.state =  [self.state[0]] + \
@@ -257,18 +256,34 @@ class StockEnvValidation(gym.Env):
     def render(self, mode='human', close=False):
         return self.state
     
-    def _get_dynamic_transaction_fee(self, vix):
-        base_fee = 0.001
-        delta = 0.0001
-        return base_fee + (vix * delta)
+    # def _get_dynamic_transaction_fee(self, vix):
+    #     base_fee = 0.001
+    #     delta = 0.0001
+    #     return base_fee + (vix * delta)
+
+    def _get_dynamic_transaction_fee(self, vix: float,
+                                  base: float = 0.0006,
+                                  vix_mean: float = 20,
+                                  beta: float = 0.5,
+                                  fee_min: float = 0.0006,
+                                  fee_max: float = 0.0015) -> float:
+        """
+        Calibrated, clipped dynamic commission.
+
+        fee = base * (1 + beta * (vix / vix_mean - 1))
+        """
+        fee = base * (1 + beta * (vix / vix_mean - 1))
+        return float(np.clip(fee, fee_min, fee_max))
+
 
     def compute_reward(self, end_total_asset, begin_total_asset, volume, num_trades, vix):
         base_reward = end_total_asset - begin_total_asset
         alpha_volume = 0.01 * (volume / 1e6)
         alpha_trades = 0.05 * num_trades
-        alpha_vix = 0.05 * (vix / 20)
+        alpha_vix = 0.02 * (vix / 20)
         penalty = alpha_volume + alpha_trades + alpha_vix
         adjusted_reward = base_reward - penalty * abs(base_reward)
+        # adjusted_reward = base_reward
         return adjusted_reward
 
     def _seed(self, seed=None):

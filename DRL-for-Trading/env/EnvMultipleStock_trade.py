@@ -82,18 +82,32 @@ class StockEnvTrade(gym.Env):
         self.model_name=model_name        
         self.iteration=iteration
 
-    def _get_dynamic_transaction_fee(self, vix):
-        base_fee = 0.001
-        delta = 0.0001
-        return base_fee + (vix * delta)
+    # def _get_dynamic_transaction_fee(self, vix):
+    #     base_fee = 0.001
+    #     delta = 0.0001
+    #     return base_fee + (vix * delta)
+    def _get_dynamic_transaction_fee(self, vix: float,
+                                  base: float = 0.0006,
+                                  vix_mean: float = 20,
+                                  beta: float = 0.5,
+                                  fee_min: float = 0.0006,
+                                  fee_max: float = 0.0015) -> float:
+        """
+        Calibrated, clipped dynamic commission.
+
+        fee = base * (1 + beta * (vix / vix_mean - 1))
+        """
+        fee = base * (1 + beta * (vix / vix_mean - 1))
+        return float(np.clip(fee, fee_min, fee_max))
     
     def compute_reward(self, end_total_asset, begin_total_asset, volume, num_trades, vix):
         base_reward = end_total_asset - begin_total_asset
         alpha_volume = 0.01 * (volume / 1e6)
         alpha_trades = 0.05 * num_trades
-        alpha_vix = 0.05 * (vix / 20)
+        alpha_vix = 0.02 * (vix / 20)
         penalty = alpha_volume + alpha_trades + alpha_vix
         adjusted_reward = base_reward - penalty * abs(base_reward)
+        # adjusted_reward = base_reward
         return adjusted_reward
 
     def _sell_stock(self, index, action):
@@ -103,22 +117,33 @@ class StockEnvTrade(gym.Env):
             transaction_fee = self._get_dynamic_transaction_fee(vix)
         else:
             transaction_fee = 0.001
-        current_shares = self.state[index + self.stock_dim + 1]
-
-        if current_shares <= 0:
-            # no shares to sell
-            return
-        
         if self.turbulence<self.turbulence_threshold:
-            shares_sold = min(abs(action), current_shares)
+            if self.state[index+self.stock_dim+1] > 0:
+                #update balance
+                self.state[0] += \
+                self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
+                 (1- transaction_fee)
+                
+                self.state[index+self.stock_dim+1] -= min(abs(action), self.state[index+self.stock_dim+1])
+                self.cost +=self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
+                 transaction_fee
+                self.trades+=1
+                self.volume += min(abs(action), self.state[index+self.stock_dim+1])
+            else:
+                pass
         else:
-            shares_sold = current_shares
-            
-        self.state[0] += self.state[index+1] * shares_sold* (1- transaction_fee)
-        self.state[index+self.stock_dim+1] -= shares_sold
-        self.cost += self.state[index+1]*shares_sold* (transaction_fee)
-        self.trades+=1
-        self.volume += shares_sold
+            # if turbulence goes over threshold, just clear out all positions 
+            if self.state[index+self.stock_dim+1] > 0:
+                #update balance
+                self.state[0] += self.state[index+1]*self.state[index+self.stock_dim+1]* \
+                              (1- transaction_fee)
+                self.state[index+self.stock_dim+1] =0
+                self.cost += self.state[index+1]*self.state[index+self.stock_dim+1]* \
+                              transaction_fee
+                self.trades+=1
+                self.volume += self.state[index+self.stock_dim+1]
+            else:
+                pass
     
     def _buy_stock(self, index, action):
         if self.if_dynamic_tc:  # means we have VIX appended
@@ -128,21 +153,21 @@ class StockEnvTrade(gym.Env):
             transaction_fee = 0.001
         # perform buy action based on the sign of the action    
         if self.turbulence< self.turbulence_threshold:
-            current_price = self.state[index + 1]
-            available_amount = self.state[0] // current_price
+            available_amount = self.state[0] // self.state[index+1]
             # print('available_amount:{}'.format(available_amount))
             
-            shares_bought = min(abs(action), available_amount)
-
             #update balance
-            self.state[0] -= current_price * shares_bought * (1 + transaction_fee)
+            self.state[0] -= self.state[index+1]*min(available_amount, action)* \
+                              (1+ transaction_fee)
 
-            self.state[index+self.stock_dim+1] += shares_bought
+            self.state[index+self.stock_dim+1] += min(available_amount, action)
             
-            self.cost += current_price * shares_bought * transaction_fee
+            self.cost+=self.state[index+1]*min(available_amount, action)* \
+                              transaction_fee
             self.trades+=1
-            self.volume += shares_bought
+            self.volume += min(available_amount, action)
         else:
+            # if turbulence goes over threshold, just stop buying
             pass
 
     def step(self, actions):
@@ -180,8 +205,8 @@ class StockEnvTrade(gym.Env):
 
             
         else:
-            # self.volume = 0
-            # self.trades = 0
+            self.volume = 0
+            self.trades = 0
 
             actions = actions * HMAX_NORMALIZE
             #actions = (actions.astype(int))

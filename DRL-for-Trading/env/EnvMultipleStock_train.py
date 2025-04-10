@@ -80,19 +80,19 @@ class StockEnvTrain(gym.Env):
             transaction_fee = self._get_dynamic_transaction_fee(vix)
         else:
             transaction_fee = 0.001
-
-        current_shares = self.state[index+self.stock_dim+1]
-        # perform sell action based on the sign of the action
-        if current_shares > 0:
+        if self.state[index+self.stock_dim+1] > 0:
             #update balance
-            shares_sold = min(abs(action), current_shares)
-            sell_price = self.state[index+1]
-            self.state[0] += sell_price * shares_sold * (1 - transaction_fee)
-            self.state[index+self.stock_dim+1] -= shares_sold
-            self.cost += sell_price * shares_sold * transaction_fee
-            self.volume += shares_sold
-            self.trades += 1
-           
+            self.state[0] += \
+            self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
+             (1- transaction_fee)
+
+            self.state[index+self.stock_dim+1] -= min(abs(action), self.state[index+self.stock_dim+1])
+            self.cost +=self.state[index+1]*min(abs(action),self.state[index+self.stock_dim+1]) * \
+             transaction_fee
+            self.trades+=1
+            self.volume += min(abs(action), self.state[index+self.stock_dim+1])
+        else:
+            pass
 
     def _buy_stock(self, index, action):
         if self.if_dynamic_tc:
@@ -100,16 +100,20 @@ class StockEnvTrain(gym.Env):
             transaction_fee = self._get_dynamic_transaction_fee(vix)
         else:
             transaction_fee = 0.001
-        
-        buy_price = self.state[index+1]
-        available_amount = self.state[0] // buy_price
-        shares_bought = min(available_amount, action)
+        # perform buy action based on the sign of the action
+        available_amount = self.state[0] // self.state[index+1]
+        # print('available_amount:{}'.format(available_amount))
 
-        self.state[0] -= buy_price * shares_bought * (1 + transaction_fee)
-        self.state[index+self.stock_dim+1] += shares_bought
-        self.cost += buy_price * shares_bought * transaction_fee
-        self.volume += shares_bought
-        self.trades += 1
+        #update balance
+        self.state[0] -= self.state[index+1]*min(available_amount, action)* \
+                          (1+ transaction_fee)
+
+        self.state[index+self.stock_dim+1] += min(available_amount, action)
+
+        self.cost+=self.state[index+1]*min(available_amount, action)* \
+                          transaction_fee
+        self.trades+=1
+        self.volume += min(available_amount, action)
         
         
     def step(self, actions):
@@ -144,8 +148,8 @@ class StockEnvTrain(gym.Env):
             return self.state, self.reward, self.terminal, {}
         else:
             # reset volume/trades for this step
-            # self.volume = 0
-            # self.trades = 0
+            self.volume = 0
+            self.trades = 0
 
             # 1) compute initial portfolio value
             begin_total_asset = (
@@ -253,13 +257,26 @@ class StockEnvTrain(gym.Env):
         return self.state
 
 
-    def _get_dynamic_transaction_fee(self, vix):
+    # def _get_dynamic_transaction_fee(self, vix):
+    #     """
+    #     Compute transaction cost dynamically based on VIX index.
+    #     """
+    #     base_fee = 0.001
+    #     delta = 0.0001
+    #     return base_fee + (vix * delta)
+    def _get_dynamic_transaction_fee(self, vix: float,
+                                  base: float = 0.0006,
+                                  vix_mean: float = 20,
+                                  beta: float = 0.5,
+                                  fee_min: float = 0.0006,
+                                  fee_max: float = 0.0015) -> float:
         """
-        Compute transaction cost dynamically based on VIX index.
+        Calibrated, clipped dynamic commission.
+
+        fee = base * (1 + beta * (vix / vix_mean - 1))
         """
-        base_fee = 0.001
-        delta = 0.0001
-        return base_fee + (vix * delta)
+        fee = base * (1 + beta * (vix / vix_mean - 1))
+        return float(np.clip(fee, fee_min, fee_max))
 
     def compute_reward(self, end_total_asset, begin_total_asset, volume, num_trades, vix):
         """
@@ -268,9 +285,10 @@ class StockEnvTrain(gym.Env):
         base_reward = end_total_asset - begin_total_asset
         alpha_volume = 0.01 * (volume / 1e6)
         alpha_trades = 0.05 * num_trades
-        alpha_vix = 0.05 * (vix / 20)
+        alpha_vix = 0.02 * (vix / 20)
         penalty = alpha_volume + alpha_trades + alpha_vix
         adjusted_reward = base_reward - penalty * abs(base_reward)
+        # adjusted_reward = base_reward
         return adjusted_reward
     
     def _seed(self, seed=None):
