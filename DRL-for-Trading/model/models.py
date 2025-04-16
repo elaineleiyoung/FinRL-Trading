@@ -107,7 +107,8 @@ def DRL_prediction(df,
                    initial_balance,
                    new_balance,
                    arrangement,
-                   if_fix
+                   if_fix,
+                   vix_mean=None
                    ):
     ### make a prediction based on trained model###
 
@@ -125,7 +126,8 @@ def DRL_prediction(df,
                                                    initial_balance = initial_balance,
                                                    new_balance = new_balance,
                                                    arrangement = arrangement,
-                                                   if_fix = if_fix)])
+                                                   if_fix = if_fix,
+                                                   vix_mean=vix_mean)])
     env_trade.seed(config.SEED_TRADE)
     obs_trade = env_trade.reset()
 
@@ -159,7 +161,7 @@ def get_validation_sharpe(iteration):
     return sharpe
 
 
-def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_selected_df, if_fix, if_vix) -> None:
+def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_selected_df, if_fix, if_vix, vix_mean=None) -> None:
     """Ensemble Strategy that combines PPO, A2C and DDPG"""
     print("============Start Ensemble Strategy============")
     # for ensemble model, it's necessary to feed the last state
@@ -243,12 +245,12 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
             ## training env
             env_train = DummyVecEnv([lambda: StockEnvTrain(train_set, stock_dim=stock_count, if_mvo=False,
                                                            initial_arrangement=initial_arrangement,
-                                                           initial_balance=initial_balance)])
+                                                           initial_balance=initial_balance, vix_mean = vix_mean)])
             env_val = DummyVecEnv([lambda: StockEnvValidation(val_set, stock_dim=stock_count,
                                                               turbulence_threshold=turbulence_threshold,
                                                               iteration=i, if_mvo=True,
                                                               initial_arrangement=initial_arrangement,
-                                                              initial_balance=initial_balance)])
+                                                              initial_balance=initial_balance, vix_mean = vix_mean)])
             env_train.seed(config.SEED_TRAIN)
             env_val.seed(config.SEED_VAL)
             print(f"validation shape: {val_set.shape}")
@@ -311,7 +313,8 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
                                                  initial_balance=initial_balance,
                                                  new_balance=new_balance_ensemble,
                                                  arrangement=arrangement_ensemble,
-                                                 if_fix=if_fix)
+                                                 if_fix=if_fix,
+                                                 vix_mean=vix_mean)
             # print("============Trading Done============")
 
             last_state_a2c = DRL_prediction(
@@ -327,7 +330,8 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
                 initial_balance,
                 new_balance_a2c,
                 arrangement_a2c,
-                if_fix
+                if_fix,
+                vix_mean=vix_mean
             )
             last_state_ppo = DRL_prediction(
                 trade_set,
@@ -342,7 +346,8 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
                 initial_balance,
                 new_balance_ppo,
                 arrangement_ppo,
-                if_fix
+                if_fix,
+                vix_mean=vix_mean
             )
             last_state_ddpg = DRL_prediction(
                 trade_set,
@@ -357,7 +362,8 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
                 initial_balance,
                 new_balance_ddpg,
                 arrangement_ddpg,
-                if_fix
+                if_fix,
+                vix_mean=vix_mean
             )
             del model_a2c, model_ppo, model_ddpg, model_ensemble
             del env_train, env_val
@@ -403,11 +409,11 @@ def run_ensemble_strategy(df, report_date, start_date, val_start_date, stock_sel
             ############## Environment Setup starts ##############
             ## training env
             env_train = DummyVecEnv([lambda: StockEnvTrain(train_set, stock_dim = stock_count, if_mvo=False,
-                                                              initial_arrangement = initial_arrangement, initial_balance = initial_balance)])
+                                                              initial_arrangement = initial_arrangement, initial_balance = initial_balance, vix_mean = vix_mean)])
             env_val = DummyVecEnv([lambda: StockEnvValidation(val_set,stock_dim = stock_count,
                                                               turbulence_threshold=turbulence_threshold,
                                                               iteration=i, if_mvo=True,
-                                                              initial_arrangement = initial_arrangement, initial_balance = initial_balance)])
+                                                              initial_arrangement = initial_arrangement, initial_balance = initial_balance, vix_mean = vix_mean)])
             env_train.seed(config.SEED_TRAIN)
             env_val.seed(config.SEED_VAL)
             print(f"validation shape: {val_set.shape}")
