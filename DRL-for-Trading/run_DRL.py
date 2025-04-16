@@ -50,6 +50,8 @@ def run_model() -> None:
     # stock_selected_df['trade_date'] = stock_selected_df['trade_date'].apply(lambda x: int(x.strftime("%Y%m%d")))
     
     # vix_data = load_vix_data("data/VIXCLS.csv")
+    vix_mean = data["VIX"].mean()
+
     ## Ensemble Strategy
     run_ensemble_strategy(df=data, 
                           report_date = report_date,
@@ -57,7 +59,9 @@ def run_model() -> None:
                           val_start_date = val_start_date,
                           stock_selected_df = stock_selected_df,
                           if_fix = True,
-                          if_vix = True)
+                          if_vix = True,
+                          vix_mean=vix_mean)
+
 
     #_logger.info(f"saving model version: {_version}")
 

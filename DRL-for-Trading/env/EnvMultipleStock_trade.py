@@ -24,7 +24,7 @@ class StockEnvTrade(gym.Env):
     def __init__(self, df, stock_dim, day = 0,turbulence_threshold=140
                  ,initial=True, previous_state=[], model_name='', iteration='',
                  initial_arrangement = None, initial_balance = None,
-                 new_balance = None, arrangement = None, if_fix = False, if_mvo = True, if_dynamic_tc = True):
+                 new_balance = None, arrangement = None, if_fix = False, if_mvo = True, if_dynamic_tc = True, vix_mean = None):
         #super(StockEnv, self).__init__()
         #money = 10 , scope = 1
         self.day = day
@@ -45,6 +45,7 @@ class StockEnvTrade(gym.Env):
         self.model_name = model_name
         self.iteration = iteration
         self.if_dynamic_tc = if_dynamic_tc
+        self.vix_mean = vix_mean
 
         # action_space normalization and shape is STOCK_DIM
         self.action_space = spaces.Box(low = -1, high = 1,shape = (self.stock_dim,)) 
@@ -88,15 +89,16 @@ class StockEnvTrade(gym.Env):
     #     return base_fee + (vix * delta)
     def _get_dynamic_transaction_fee(self, vix: float,
                                   base: float = 0.0006,
-                                  vix_mean: float = 20,
+                                #   vix_mean: float = 20,
                                   beta: float = 0.5,
-                                  fee_min: float = 0.0006,
+                                  fee_min: float = 0.0005,
                                   fee_max: float = 0.0015) -> float:
         """
         Calibrated, clipped dynamic commission.
 
         fee = base * (1 + beta * (vix / vix_mean - 1))
         """
+        vix_mean = self.vix_mean
         fee = base * (1 + beta * (vix / vix_mean - 1))
         return float(np.clip(fee, fee_min, fee_max))
     
